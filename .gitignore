@@ -1,0 +1,9 @@
+# caches
+__pycache__/
+*.pyc
+cache_*/
+*_output.jsonl
+.DS_Store
+
+# secrets
+.env

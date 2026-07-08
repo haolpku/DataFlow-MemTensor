@@ -1,0 +1,5 @@
+{"instruction": "A quadratic is given in vertex form with a=3, h=4, k=-8 (f(x)=3(x-4)^2-8). Determine the exact product of its two real roots.", "golden_answer": "40/3"}
+{"instruction": "In a circle with center O and radius 13, a chord AB has length 10. Find the exact perpendicular distance from O to AB.", "golden_answer": "12"}
+{"instruction": "A utility charges a base fee of 30, then 3 per unit for the first 10 units and 7 per unit beyond that. A customer used 16 units. Compute the total charge.", "golden_answer": "102"}
+{"instruction": "Find the exact minimum value of f(x)=3x^2-12x over the reals.", "golden_answer": "-12"}
+{"instruction": "Find the product of the two roots of x^2 - 5x - 8 = 0.", "golden_answer": "-8"}

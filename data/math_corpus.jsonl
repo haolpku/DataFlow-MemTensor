@@ -1,0 +1,13 @@
+# 一个真实数学语料样例(FlashRAG/BM25 通用 schema: {"id","contents"})
+{"id": "vieta", "contents": "Vieta's formulas: for a monic quadratic x^2+px+q=0 with roots r1 and r2, the sum r1+r2 = -p and the product r1*r2 = q. More generally for ax^2+bx+c=0, r1+r2 = -b/a and r1*r2 = c/a."}
+{"id": "discriminant", "contents": "Discriminant: for ax^2+bx+c=0, the discriminant D = b^2 - 4ac. Two distinct real roots iff D>0, one repeated real root iff D=0, and a complex-conjugate pair iff D<0."}
+{"id": "quadratic_formula", "contents": "Quadratic formula: the roots of ax^2+bx+c=0 are x = (-b ± sqrt(b^2-4ac)) / (2a)."}
+{"id": "vertex_form", "contents": "Vertex form of a quadratic: f(x)=a(x-h)^2+k has its vertex at (h,k). Setting f(x)=0 gives (x-h)^2 = -k/a, so x = h ± sqrt(-k/a); real roots exist iff -k/a >= 0."}
+{"id": "chord_distance", "contents": "Perpendicular from the center of a circle to a chord bisects the chord. For a chord of length L in a circle of radius r, the perpendicular distance from the center is d = sqrt(r^2 - (L/2)^2)."}
+{"id": "power_rule", "contents": "Power rule for derivatives: d/dx[x^n] = n*x^(n-1). Differentiation is linear. Interior extrema of a differentiable function occur where the first derivative equals zero (stationary points)."}
+{"id": "quadratic_min", "contents": "A quadratic f(x)=ax^2+bx+c with a>0 attains its minimum at x = -b/(2a), with minimum value c - b^2/(4a). If a<0 this point is a maximum instead."}
+{"id": "geometric_sum", "contents": "Finite geometric series: sum_{k=0}^{n-1} a*r^k = a*(r^n - 1)/(r - 1) for r != 1, and equals a*n when r = 1."}
+{"id": "arithmetic_sum", "contents": "Arithmetic series sum: for n terms with first term a1 and last term an, S_n = n*(a1+an)/2 = n*a1 + n*(n-1)/2 * d where d is the common difference."}
+{"id": "pythagorean", "contents": "Pythagorean theorem: in a right triangle with legs a,b and hypotenuse c, a^2 + b^2 = c^2."}
+{"id": "piecewise_pricing", "contents": "Tiered/piecewise pricing: total cost = base fee + rate1 * (units within tier 1) + rate2 * (units beyond the tier-1 threshold). Determine which tiers apply by comparing usage against each threshold."}
+{"id": "completing_square", "contents": "Completing the square rewrites ax^2+bx+c as a(x + b/(2a))^2 + (c - b^2/(4a)), which exposes the vertex and the extreme value of the quadratic."}

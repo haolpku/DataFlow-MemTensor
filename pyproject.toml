@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataflow-memtensor"
+version = "0.1.0"
+description = "Math mid-train data-generation operators & pipelines on top of DataFlow / DataFlow-Agent (multi-step evidence reasoning + long-horizon interleaved thinking)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = [
+    # 核心框架依赖(提供 OperatorABC / LLMServingABC / OPERATOR_REGISTRY / storage / SandboxClientABC)
+    "open-dataflow",        # DataFlow
+    "dataflow-agent",       # DataFlow-Agent
+    "pandas",
+    "sympy>=1.12",
+]
+
+[project.optional-dependencies]
+# 本机可跑的真实检索(BM25)
+bm25 = ["rank_bm25", "numpy"]
+# 答案数学校验
+verify = ["math_verify"]
+# 生产级稠密检索(e5/faiss),需 GPU 集群
+dense = ["flashrag"]
+
+[tool.setuptools.packages.find]
+include = ["dataflow_memtensor*"]
