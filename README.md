@@ -57,35 +57,95 @@ pip install rank_bm25 numpy math_verify
 
 ---
 
-## 运行
+## 可复现数据工作流
 
-两条 pipeline 都需要真实 LLM API(OpenAI 兼容端点):
+两条 pipeline 都建立在 DataFlow 的 `FileStorage` 之上:**每调用一次 `storage.step()`,当前算子把输出落成一个独立的 jsonl 文件**,文件名 `{prefix}_step{N}.jsonl`。这带来三个可复现特性:
+
+1. **每一步都可检查** —— 中间产物全部落盘,不是黑盒;
+2. **可断点续跑** —— `FileStorage` 会读上一步的产物作为下一步输入;
+3. **可精确定位数据流失** —— 每条样本在哪一步、因什么被过滤,一目了然。
+
+### 数据流与落盘位置
+
+```
+                            输入                         每步产物(可检查)
+多步证据推理:
+  data/evidence_seed.jsonl
+        │
+        ├─[step1] ReasoningEvidenceChainGenerator  → cache_evidence/evidence_step_step1.jsonl  (LLM 生成,未过滤)
+        └─[step2] ReasoningEvidenceGroundingFilter → cache_evidence/evidence_step_step2.jsonl  (grounding+math_verify 过滤后)
+
+长程交错思维:
+  SEED_TASKS (或自定义)
+        │
+        ├─[step1] AgentExploreGenerator      → cache_interleaved/interleaved_step_step1.jsonl  (轨迹生成,真实工具调用)
+        ├─[step2] TrajectoryQualityEvaluator → cache_interleaved/interleaved_step_step2.jsonl  (+ traj_overall 打分)
+        ├─[step3] TrajectoryFilter           → cache_interleaved/interleaved_step_step3.jsonl  (规则门控后)
+        └─[step4] TrajectorySelector         → cache_interleaved/interleaved_step_step4.jsonl  (top-N 选择)
+                                              → interleaved_output.jsonl  (最终交付)
+```
+
+> 说明:cache 目录落在**运行时的当前目录(cwd)** 下,可用 pipeline 的 `cache_path` 参数改到固定位置。
+
+### 端到端复现步骤
 
 ```bash
+# 0) 依赖框架(源码树用 PYTHONPATH;绝对路径,避免切目录后失效)
+BASE=/path/to
+export PYTHONPATH="$BASE/DataFlow:$BASE/DataFlow-Agent:$BASE/DataFlow-MemTensor"
+pip install rank_bm25 numpy math_verify     # 本机真实检索 + 答案校验
+
+# 1) LLM API(OpenAI 兼容端点)
 export DF_API_KEY=sk-...
 export DF_API_URL=http://.../v1/chat/completions
-export DF_MODEL=gpt-4.1-mini          # 或 claude / deepseek / qwen ...
-```
+export DF_MODEL=gpt-4.1-mini                 # 或 claude / deepseek / qwen ...
 
-### 1. 多步证据推理
+# 2) 准备输入(见 data/README.md 的 schema)
+#    data/evidence_seed.jsonl   种子题
+#    data/math_corpus.jsonl     检索语料
+export MEMTENSOR_CORPUS=$BASE/DataFlow-MemTensor/data/math_corpus.jsonl
 
-```bash
+# 3) 跑两条 pipeline
 python -m dataflow_memtensor.pipelines.evidence_pipeline
-```
-流程:`种子题 → ReasoningEvidenceChainGenerator(LLM 生成证据链) → ReasoningEvidenceGroundingFilter(grounding+math_verify 过滤)`。
-输出 `{instruction, evidences[], steps[], generated_golden_answer, num_hops, claim_binding_rate}`,
-每条 ≥3 跳、每步 claim 绑 `evidence_id`、绑定率 ≥0.95、答案 math_verify 校验。
+python -m dataflow_memtensor.pipelines.interleaved_pipeline
 
-### 2. 长程交错思维
+# 4) 检查每一步中间结果
+head -1 cache_evidence/evidence_step_step1.jsonl | python -m json.tool      # 生成器原始输出
+wc -l cache_evidence/evidence_step_step*.jsonl                              # 每步剩多少条
+```
+
+### 逐步追踪一条样本(定位过滤原因)
+
+```python
+import json
+for s in [1, 2, 3, 4]:
+    rows = [json.loads(l) for l in open(f"cache_interleaved/interleaved_step_step{s}.jsonl")]
+    print(f"step{s}: {len(rows)} 条")
+# 例:某题在 step1 已 success=False,step2 打分 0.4,
+#     step3 的 TrafectoryFilter(require_success=True) 将其剔除 —— 未解出的样本不进训练集。
+```
+
+### 复现的确定性边界
+
+- **可完全复现**:算子逻辑、过滤规则、落盘结构、检索(BM25 确定性)。相同输入 + 相同中间产物 → 相同过滤/选择结果。
+- **不完全复现**:LLM 生成本身随温度/服务端有随机性(证据链措辞、轨迹步数会变)。要更强复现性:`DF_MODEL` 固定、温度设 0(`APILLMServing_request(temperature=0)`)、并保留 cache 目录作为该次运行的快照。
+
+---
+
+## 运行(速查)
+
+两条 pipeline 都需要真实 LLM API(见上节完整步骤):
 
 ```bash
-# 默认用内置 DictRetriever(仅演示);挂真实语料走 BM25:
-export MEMTENSOR_CORPUS=data/math_corpus.jsonl
+export DF_API_KEY=sk-...  DF_API_URL=http://.../v1/chat/completions  DF_MODEL=gpt-4.1-mini
+
+# 多步证据推理: 种子题 → 生成证据链 → grounding+math_verify 过滤
+python -m dataflow_memtensor.pipelines.evidence_pipeline
+
+# 长程交错思维: 种子任务 → 轨迹生成 → 打分 → 过滤 → 选择
+export MEMTENSOR_CORPUS=data/math_corpus.jsonl   # 挂真实语料走 BM25;不设则用内置 Dict 兜底
 python -m dataflow_memtensor.pipelines.interleaved_pipeline
 ```
-流程:`种子任务 → AgentExploreGenerator(MathSandboxClient) → QualityEvaluator → Filter → Selector`。
-LLM 在 sandbox 里**自主决定每步调什么工具**(search/read/run_python/sympy_check/…),
-`run_python`/`sympy_check` 为**真实执行**,`search`/`read` 从**真实语料检索**。
 
 ---
 
