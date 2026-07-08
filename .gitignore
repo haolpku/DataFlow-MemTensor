@@ -7,3 +7,8 @@ cache_*/
 
 # secrets
 .env
+
+# data payloads are not published; keep only the folder's README placeholder
+data/*
+!data/README.md
+
