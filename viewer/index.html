@@ -56,6 +56,10 @@
         cursor: pointer; transition: border-color .15s, background .15s; }
   .ev .eid { font-family: ui-monospace, monospace; color: var(--accent2); font-weight: 700; margin-right: 8px; }
   .ev.hl { border-color: var(--accent2); background: #17321f; box-shadow: 0 0 0 2px rgba(34,197,94,.25); }
+  .ev.distract { background: #2a2016; border-color: #5a4321; opacity: .85; }
+  .ev.distract .eid { color: var(--warn); }
+  .dtag { font-size: 10px; color: var(--warn); border: 1px solid #5a4321; border-radius: 4px;
+          padding: 0 5px; margin-left: 6px; white-space: nowrap; }
   .step { border-left: 3px solid var(--border); padding: 6px 0 6px 12px; margin: 10px 0; }
   .step .claim { font-weight: 500; }
   .step .der { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
@@ -83,13 +87,47 @@
   .bar > i { display: block; height: 100%; background: var(--accent); }
   .empty { color: var(--muted); text-align: center; padding: 40px; }
   code { font-family: ui-monospace, Menlo, monospace; }
+  /* layout with sidebar */
+  #wrap { display: flex; align-items: stretch; }
+  #side { width: 300px; min-width: 240px; background: var(--panel); border-right: 1px solid var(--border);
+          padding: 12px; overflow-y: auto; height: calc(100vh - 52px); position: sticky; top: 52px; }
+  #side.hidden { display: none; }
+  #side h2 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+             margin: 4px 0 8px; font-weight: 600; }
+  #side .grp { color: var(--muted); font-size: 11px; margin: 10px 0 3px; font-family: ui-monospace, monospace; }
+  #side .f { padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: flex;
+             justify-content: space-between; gap: 8px; align-items: center; }
+  #side .f:hover { background: var(--panel2); }
+  #side .f.active { background: #22314d; color: #cfe0ff; }
+  #side .f .sz { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #side .note { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+  #main { flex: 1; min-width: 0; }
+  .refresh { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
+  /* view tabs (结构 / 训练格式) */
+  .tabs { display: flex; gap: 6px; margin: 2px 0 10px; }
+  .tab { font-size: 12px; padding: 3px 12px; border: 1px solid var(--border); border-radius: 20px;
+         cursor: pointer; color: var(--muted); user-select: none; }
+  .tab.on { color: var(--fg); border-color: var(--accent); background: #1b2740; }
+  .train { position: relative; }
+  .train pre { background: #0c0e13; border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+               overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+               font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.55; margin: 0; }
+  .copy { position: absolute; top: 8px; right: 8px; font-size: 11px; padding: 3px 9px;
+          background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--muted); }
+  .copy:hover { border-color: var(--accent); color: var(--fg); }
+  /* token roles inside training text */
+  .tk-tag { color: #7dd3fc; font-weight: 600; }       /* [Evidence] [Question] ... */
+  .tk-ev  { color: #86efac; }                          /* ev ids */
+  .tk-role{ color: #c4b5fd; font-weight: 600; }        /* Thought/Action/Observation */
+  .tk-tool{ color: #fbbf24; }                          /* tool name */
+  .tk-ans { color: #f0abfc; font-weight: 600; }        /* answer */
 </style>
 </head>
 <body>
 <header>
   <div>
     <h1>DataFlow-MemTensor 数据查看器</h1>
-    <div class="sub">拖入或选择 jsonl —— 自动识别 long-CoT / evidence / interleaved</div>
+    <div class="sub">选择文件 / 浏览目录 —— 自动识别 long-CoT / evidence / interleaved</div>
   </div>
   <div class="controls">
     <select id="typeFilter" title="按类型筛选"><option value="">全部类型</option>
@@ -100,15 +138,26 @@
   </div>
 </header>
 
-<div id="stats"></div>
-<div id="drop">把 <b>.jsonl</b> 文件拖到这里,或点右上角「选择文件」<br><span class="sub">也可点「示例」看内置样例</span></div>
-<div id="list"></div>
+<div id="wrap">
+  <aside id="side">
+    <h2>目录文件 <button class="refresh" id="refresh" title="重新扫描">↻ 刷新</button></h2>
+    <div id="filelist"><div class="note">加载中…</div></div>
+  </aside>
+  <div id="main">
+    <div id="stats"></div>
+    <div id="drop">把 <b>.jsonl</b> 拖到这里,或点右上角「选择文件」<br><span class="sub">也可点「示例」看内置样例</span></div>
+    <div id="list"></div>
+  </div>
+</div>
 
 <script>
 const listEl = document.getElementById('list');
 const statsEl = document.getElementById('stats');
 const dropEl = document.getElementById('drop');
+const sideEl = document.getElementById('side');
+const fileListEl = document.getElementById('filelist');
 let RECORDS = [];
+let ACTIVE_PATH = null;
 
 // ---------- 类型识别 ----------
 function detectType(o){
@@ -121,6 +170,72 @@ function detectType(o){
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 function parseTraj(o){ let t=o.trajectory!==undefined?o.trajectory:o; if(typeof t==='string'){try{t=JSON.parse(t)}catch(e){}} return t; }
+
+// ========== 训练文本构造(把结构化 jsonl 拼成真正喂给模型的串) ==========
+// evidence -> evidence-grounded 推理文本
+function trainTextEvidence(o){
+  const lines = [];
+  lines.push("[Evidence]");
+  (o.evidences||[]).forEach(e=> lines.push(`${e.evidence_id}: ${e.text}`));
+  lines.push("");
+  lines.push("[Question] " + (o.instruction||o.question||""));
+  lines.push("");
+  lines.push("[Reasoning]");
+  (o.steps||[]).forEach(s=>{
+    const refs = (s.evidence_ids||[]).join(", ");
+    lines.push(`Step ${s.step} (from ${refs}): ${s.claim}`);
+    if(s.derivation) lines.push(`    ${s.derivation}`);
+  });
+  lines.push("");
+  lines.push("[Answer] " + (o.generated_golden_answer||o.golden_answer||""));
+  return lines.join("\n");
+}
+// interleaved -> ReAct 风格工具调用轨迹
+function trainTextInterleaved(o){
+  const t = parseTraj(o);
+  const lines = [];
+  lines.push("[Task] " + (t.task||o.query||""));
+  lines.push("");
+  (t.steps||[]).forEach(s=>{
+    if(s.thought) lines.push("Thought: " + s.thought);
+    const tool = s.action&&s.action.tool || "?";
+    const args = s.action&&s.action.args ? JSON.stringify(s.action.args) : "{}";
+    lines.push(`Action: ${tool}(${args})`);
+    if(s.action && s.action.tool !== 'finish'){
+      let obs = s.observation; if(typeof obs!=='string') obs = JSON.stringify(obs);
+      lines.push("Observation: " + obs);
+    }
+    lines.push("");
+  });
+  lines.push("Final Answer: " + (t.final_answer||""));
+  return lines.join("\n");
+}
+function trainTextCoT(o){
+  const q = o.instruction||o.input||"";
+  const cot = o.generated_cot||o.output||"";
+  return `[Question] ${q}\n\n${cot}`;
+}
+function buildTrainText(type, o){
+  if(type==='evidence') return trainTextEvidence(o);
+  if(type==='interleaved') return trainTextInterleaved(o);
+  return trainTextCoT(o);
+}
+// 轻量语法高亮(仅着色,不改内容)
+function hlTrain(text){
+  let s = esc(text);
+  s = s.replace(/^(\[[^\]]+\])/gm, '<span class="tk-tag">$1</span>');
+  s = s.replace(/^(Thought|Action|Observation|Final Answer|Step \d+[^:]*):/gm, '<span class="tk-role">$1</span>:');
+  s = s.replace(/\b(ev\d+)\b/g, '<span class="tk-ev">$1</span>');
+  return s;
+}
+// 存一份原文供复制
+const TRAINCACHE = {};
+function trainBlock(id, type, o){
+  const txt = buildTrainText(type, o);
+  TRAINCACHE[id] = txt;
+  return `<div class="train"><button class="copy" data-copy="${id}">复制</button>`+
+         `<pre>${hlTrain(txt)}</pre></div>`;
+}
 
 // ---------- 渲染:long-CoT ----------
 function renderCoT(o, i){
@@ -144,9 +259,13 @@ function renderCoT(o, i){
 // ---------- 渲染:evidence(claim ↔ evidence 高亮联动) ----------
 function renderEvidence(o, i){
   const uid = 'e'+i;
-  const evs = (o.evidences||[]).map(e=>
-    `<div class="ev" id="${uid}-${e.evidence_id}" data-eid="${e.evidence_id}">
-        <span class="eid">${esc(e.evidence_id)}</span>${esc(e.text)}</div>`).join('');
+  const distractors = new Set(Array.isArray(o.distractor_ids)?o.distractor_ids:[]);
+  const evs = (o.evidences||[]).map(e=>{
+    const isD = distractors.has(e.evidence_id);
+    return `<div class="ev${isD?' distract':''}" id="${uid}-${e.evidence_id}" data-eid="${e.evidence_id}">
+        <span class="eid">${esc(e.evidence_id)}</span>${esc(e.text)}
+        ${isD?'<span class="dtag">干扰·未用</span>':''}</div>`;
+  }).join('');
   const steps = (o.steps||[]).map(s=>{
     const refs = (s.evidence_ids||[]).map(id=>
       `<span class="eref" data-target="${uid}-${id}">${esc(id)}</span>`).join('');
@@ -154,15 +273,26 @@ function renderEvidence(o, i){
       <div class="der">${refs} ${esc(s.derivation||'')}</div></div>`;
   }).join('');
   const br = o.claim_binding_rate!=null ? (o.claim_binding_rate*100).toFixed(0)+'%' : '—';
+  const nEv = (o.evidences||[]).length, nD = distractors.size;
+  const uidv = 'ev'+i;
   return `<div class="rec" data-type="evidence">
     <div class="rec-head"><span class="idx">#${i}</span><span class="badge evidence">evidence</span>
       <span class="q">${esc(o.instruction || o.question || '')}</span></div>
     <div class="rec-body">
       <div class="kv"><b>${o.num_hops||(o.steps||[]).length}</b> 跳 &nbsp; 绑定率 <b>${br}</b>
+        &nbsp; 证据 <b>${nEv}</b> 条${nD?`(含 <b style="color:var(--warn)">${nD}</b> 干扰)`:''}
         &nbsp; 答案 <span class="ans">${esc(o.generated_golden_answer||o.golden_answer||'')}</span></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px">
-        <div><div class="kv" style="margin-bottom:4px">证据簇 (点击高亮)</div>${evs}</div>
-        <div><div class="kv" style="margin-bottom:4px">推理链 (点 evidence 徽标定位)</div>${steps}</div>
+      <div class="tabs" data-rec="${uidv}">
+        <span class="tab on" data-view="struct">结构视图</span>
+        <span class="tab" data-view="train">训练格式</span></div>
+      <div class="view struct" data-rec="${uidv}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div><div class="kv" style="margin-bottom:4px">证据簇 (点击高亮)</div>${evs}</div>
+          <div><div class="kv" style="margin-bottom:4px">推理链 (点 evidence 徽标定位)</div>${steps}</div>
+        </div>
+      </div>
+      <div class="view train-view" data-rec="${uidv}" style="display:none">
+        ${trainBlock(uidv, 'evidence', o)}
       </div>
     </div></div>`;
 }
@@ -184,6 +314,7 @@ function renderInterleaved(o, i){
   const ok = t.success;
   const ov = o.traj_overall;
   const metric = (label,v)=> v==null?'':`<span>${label} <b>${v}</b></span>`;
+  const uidv = 'il'+i;
   return `<div class="rec" data-type="interleaved">
     <div class="rec-head"><span class="idx">#${i}</span><span class="badge interleaved">interleaved</span>
       <span class="q">${esc(t.task||o.query||'')}</span>
@@ -191,13 +322,21 @@ function renderInterleaved(o, i){
     <div class="rec-body">
       <div class="kv"><b>${t.num_steps||(t.steps||[]).length}</b> 步 &nbsp;
         最终答案 <span class="ans">${esc(t.final_answer||'')}</span></div>
-      ${steps}
-      <div class="metrics">
-        ${metric('overall', ov!=null?Number(ov).toFixed(2):null)}
-        ${metric('goal', o.traj_goal_achievement)}${metric('efficiency', o.traj_efficiency)}
-        ${metric('coherence', o.traj_coherence)}${metric('tool_use', o.traj_tool_use)}
+      <div class="tabs" data-rec="${uidv}">
+        <span class="tab on" data-view="struct">结构视图</span>
+        <span class="tab" data-view="train">训练格式 (ReAct)</span></div>
+      <div class="view struct" data-rec="${uidv}">
+        ${steps}
+        <div class="metrics">
+          ${metric('overall', ov!=null?Number(ov).toFixed(2):null)}
+          ${metric('goal', o.traj_goal_achievement)}${metric('efficiency', o.traj_efficiency)}
+          ${metric('coherence', o.traj_coherence)}${metric('tool_use', o.traj_tool_use)}
+        </div>
+        ${o.traj_rationale?`<div class="kv" style="margin-top:4px">评语: ${esc(o.traj_rationale)}</div>`:''}
       </div>
-      ${o.traj_rationale?`<div class="kv" style="margin-top:4px">评语: ${esc(o.traj_rationale)}</div>`:''}
+      <div class="view train-view" data-rec="${uidv}" style="display:none">
+        ${trainBlock(uidv, 'interleaved', o)}
+      </div>
     </div></div>`;
 }
 
@@ -218,6 +357,7 @@ function render(){
   listEl.innerHTML = rows.length ? rows.map(r=>renderOne(r.o,r.i)).join('')
                                  : '<div class="empty">该类型下没有记录</div>';
   wireEvidence();
+  wireTabs();
   // stats
   const c={cot:0,evidence:0,interleaved:0,unknown:0};
   RECORDS.forEach(o=>c[detectType(o)]++);
@@ -239,6 +379,23 @@ function wireEvidence(){
   });
 }
 
+// 结构视图 / 训练格式 切换 + 复制
+function wireTabs(){
+  document.querySelectorAll('.tabs .tab').forEach(tab=>{
+    tab.onclick=()=>{
+      const rec = tab.parentElement.dataset.rec;
+      const view = tab.dataset.view; // struct | train
+      tab.parentElement.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t===tab));
+      document.querySelectorAll(`.view.struct[data-rec="${rec}"]`).forEach(v=> v.style.display = view==='struct'?'':'none');
+      document.querySelectorAll(`.view.train-view[data-rec="${rec}"]`).forEach(v=> v.style.display = view==='train'?'':'none');
+    };
+  });
+  document.querySelectorAll('.copy').forEach(btn=>{
+    btn.onclick=()=>{ const txt = TRAINCACHE[btn.dataset.copy]||'';
+      navigator.clipboard.writeText(txt).then(()=>{ const o=btn.textContent; btn.textContent='已复制'; setTimeout(()=>btn.textContent=o,1200); }); };
+  });
+}
+
 // ---------- 加载 ----------
 function loadText(text){
   const recs=[];
@@ -250,6 +407,7 @@ function loadText(text){
 }
 document.getElementById('file').onchange=e=>{
   const f=e.target.files[0]; if(!f) return;
+  ACTIVE_PATH=null; markActive();
   const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f);
 };
 document.getElementById('typeFilter').onchange=render;
@@ -259,8 +417,45 @@ document.body.addEventListener('drop',e=>{ e.preventDefault(); dropEl.classList.
   const f=e.dataTransfer.files[0]; if(!f) return;
   const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
 
+// ---------- 侧栏:目录文件浏览(需通过 serve.py 启动) ----------
+function fmtSize(n){ return n<1024?n+'B' : n<1048576?(n/1024).toFixed(0)+'K' : (n/1048576).toFixed(1)+'M'; }
+function markActive(){
+  document.querySelectorAll('#filelist .f').forEach(el=>
+    el.classList.toggle('active', el.dataset.path===ACTIVE_PATH));
+}
+async function loadFromServer(path){
+  ACTIVE_PATH = path; markActive();
+  try{
+    const r = await fetch('/'+path.split('/').map(encodeURIComponent).join('/'));
+    loadText(await r.text());
+  }catch(e){ listEl.innerHTML='<div class="empty">加载失败: '+esc(path)+'</div>'; }
+}
+async function initSidebar(){
+  try{
+    const r = await fetch('/api/list', {cache:'no-store'});
+    if(!r.ok) throw 0;
+    const data = await r.json();
+    const files = data.files||[];
+    if(!files.length){ fileListEl.innerHTML='<div class="note">未发现 jsonl 文件。先跑 pipeline 生成 cache_*/ 数据。</div>'; return; }
+    const groups={};
+    files.forEach(f=>{ (groups[f.dir]=groups[f.dir]||[]).push(f); });
+    fileListEl.innerHTML = Object.keys(groups).sort().map(dir=>
+      `<div class="grp">${esc(dir)}/</div>` +
+      groups[dir].map(f=>`<div class="f" data-path="${esc(f.path)}">
+          <span>${esc(f.name)}</span><span class="sz">${fmtSize(f.size)}</span></div>`).join('')
+    ).join('');
+    fileListEl.querySelectorAll('.f').forEach(el=>
+      el.onclick=()=>loadFromServer(el.dataset.path));
+  }catch(e){
+    // 非 serve.py 启动(file:// 直接打开)——隐藏侧栏,回退到拖拽/选文件
+    sideEl.classList.add('hidden');
+  }
+}
+document.getElementById('refresh').onclick=initSidebar;
+
 // 内置示例(每类一条)
 document.getElementById('sampleBtn').onclick=()=>{
+  ACTIVE_PATH=null; markActive();
   const sample=[
     {instruction:"Find the product of the two roots of x^2 - 5x - 8 = 0.", golden_answer:"-8",
      extracted_answer:"-8", generated_cot:"<think>\nBy Vieta's formulas, for x^2+px+q=0 the product of roots is q.\nHere p=-5, q=-8, so the product of the roots is -8.\nCheck: roots are (5±sqrt(57))/2; their product is (25-57)/4 = -32/4 = -8. ✓\n</think>\nThe product of the roots is \\boxed{-8}."},
@@ -284,6 +479,9 @@ document.getElementById('sampleBtn').onclick=()=>{
   ];
   RECORDS=sample; dropEl.style.display='none'; document.getElementById('typeFilter').value=''; render();
 };
+
+// 启动:尝试加载目录侧栏(serve.py 提供 /api/list;file:// 直接打开则自动隐藏侧栏)
+initSidebar();
 </script>
 </body>
 </html>

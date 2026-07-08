@@ -77,7 +77,9 @@ def build_sandbox():
     return MathSandboxClient()
 
 
-# 种子题(真实使用时从 HF / 题库读入,可任意扩展)
+# 种子题:默认从 data/evidence_seed.jsonl 读取(与 CoT/evidence 用同一批 24 题),
+# 每题包装成"回忆定理→计算→验证"的 agent 任务。也可用 SEED_TASKS 兜底。
+_SEED_FILE = os.path.join(_REPO_ROOT, "data", "evidence_seed.jsonl")
 SEED_TASKS = [
     "Find the product of the two roots of x^2 - 5x - 8 = 0. Recall the theorem, compute, and verify.",
     "Find the exact distance from the center to a chord of length 10 in a circle of radius 13.",
@@ -85,8 +87,27 @@ SEED_TASKS = [
 ]
 
 
+def load_seed_tasks(seed_file=_SEED_FILE):
+    """从 evidence_seed.jsonl 读题,包装成 agent 任务串;读不到则用内置 SEED_TASKS。"""
+    if not os.path.exists(seed_file):
+        return SEED_TASKS
+    tasks = []
+    for line in open(seed_file, encoding="utf-8"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            o = json.loads(line)
+        except Exception:
+            continue
+        q = o.get("instruction") or o.get("question") or ""
+        if q:
+            tasks.append(f"{q} Recall the relevant theorem via tools, compute, and verify.")
+    return tasks or SEED_TASKS
+
+
 def main(seed_tasks=None, out_path=None, cache_path="./cache_interleaved"):
-    seed_tasks = seed_tasks or SEED_TASKS
+    seed_tasks = seed_tasks or load_seed_tasks()
     os.makedirs(cache_path, exist_ok=True)
     src = os.path.join(cache_path, "seed_tasks.jsonl")
     pd.DataFrame([{"query": t} for t in seed_tasks]).to_json(
@@ -121,7 +142,7 @@ def main(seed_tasks=None, out_path=None, cache_path="./cache_interleaved"):
 
     # Stage 4: top-N 多样性选择                  -> interleaved_step_step4.jsonl
     TrajectorySelector(
-        max_selected=10, min_depth=2, mode="rows",
+        max_selected=50, min_depth=2, mode="rows",
     ).run(storage.step(), input_key="trajectory", output_key="selected_trajectories")
 
     df = storage.step().read(output_type="dataframe")

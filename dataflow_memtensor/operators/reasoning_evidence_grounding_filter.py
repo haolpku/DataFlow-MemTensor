@@ -28,12 +28,16 @@ class ReasoningEvidenceGroundingFilter(OperatorABC):
                  min_hops: int = 3,
                  check_answer_against: Optional[str] = "golden_answer",
                  compare_method: str = "math_verify",
+                 require_distractors: bool = False,
+                 forbid_citing_distractors: bool = True,
                  ):
         self.logger = get_logger()
         self.min_binding_rate = min_binding_rate
         self.min_hops = min_hops
         self.check_answer_against = check_answer_against
         self.compare_method = compare_method
+        self.require_distractors = require_distractors
+        self.forbid_citing_distractors = forbid_citing_distractors
 
     @staticmethod
     def get_desc(lang: str = "zh"):
@@ -90,6 +94,17 @@ class ReasoningEvidenceGroundingFilter(OperatorABC):
         binding_rate = bound / len(steps) if steps else 0.0
         if binding_rate < self.min_binding_rate:
             return False
+
+        # 干扰项检查:证明模型确实要"筛选"证据,而非全用
+        distractor_ids = row.get("distractor_ids") if "distractor_ids" in row.index else None
+        distractor_ids = distractor_ids if isinstance(distractor_ids, list) else []
+        if self.require_distractors and not distractor_ids:
+            return False
+        if self.forbid_citing_distractors and distractor_ids:
+            cited = {e for s in steps if isinstance(s, dict) for e in (s.get("evidence_ids") or [])}
+            # 被引用的证据里不能包含任何干扰项
+            if cited & set(distractor_ids):
+                return False
 
         if self.check_answer_against and self.check_answer_against in row.index:
             ref = row.get(self.check_answer_against)
