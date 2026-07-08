@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataFlow-MemTensor · 数学数据展示中心</title>
+<style>
+  :root{--bg:#0f1115;--panel:#181b22;--panel2:#1f232c;--border:#2a2f3a;--fg:#e6e9ef;
+        --muted:#8b93a3;--accent:#5b9dff;--accent2:#22c55e;--warn:#f59e0b;--bad:#ef4444;--think:#2a2233;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.6;
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+  header{background:var(--panel);border-bottom:1px solid var(--border);padding:18px 0;margin-bottom:22px}
+  header h1{margin:0;font-size:19px}
+  header .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  header .repo{float:right;font-size:12px;color:var(--muted)}
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 16px}
+  .stat b{font-size:20px;color:var(--fg)}.stat span{color:var(--muted);font-size:12px;display:block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+  .ccard{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s,transform .1s}
+  .ccard:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .ccard .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:8px}
+  .ccard h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center}
+  .ccard .cat{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .ccard .desc{color:#b9c1cf;font-size:12.5px;margin:8px 0}
+  .ccard .cnt{color:var(--accent2);font-weight:600;font-size:13px}
+  .back{cursor:pointer;color:var(--accent);margin-bottom:14px;display:inline-block}
+  .dhead{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .dhead h2{margin:0;font-size:18px}
+  .dmeta{color:var(--muted);font-size:12.5px;margin-bottom:16px}
+  /* record card */
+  .rec{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}
+  .rec-head{padding:12px 16px;background:var(--panel2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .rec-head .idx{color:var(--muted);font-variant-numeric:tabular-nums}
+  .rec-head .q{flex:1;min-width:200px;font-weight:500}
+  .rec-body{padding:14px 16px}
+  .kv{color:var(--muted);font-size:12px}.kv b{color:var(--fg)}
+  .badge{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--border)}
+  .badge.ok{color:var(--accent2);border-color:var(--accent2)}.badge.fail{color:var(--bad);border-color:var(--bad)}
+  .ans{font-family:ui-monospace,Menlo,monospace;background:#10241a;color:#86efac;padding:2px 8px;border-radius:6px;border:1px solid #2f855a}
+  details{margin:8px 0}summary{cursor:pointer;color:var(--accent);user-select:none;padding:4px 0}
+  .think{background:var(--think);border:1px solid #3a2f45;border-radius:8px;padding:12px;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#d9cfe6}
+  .ev{background:#14261c;border:1px solid #234;border-radius:8px;padding:8px 10px;margin:6px 0;cursor:pointer;transition:.15s}
+  .ev .eid{font-family:ui-monospace,monospace;color:var(--accent2);font-weight:700;margin-right:8px}
+  .ev.hl{border-color:var(--accent2);background:#17321f;box-shadow:0 0 0 2px rgba(34,197,94,.25)}
+  .ev.distract{background:#2a2016;border-color:#5a4321;opacity:.85}.ev.distract .eid{color:var(--warn)}
+  .dtag{font-size:10px;color:var(--warn);border:1px solid #5a4321;border-radius:4px;padding:0 5px;margin-left:6px}
+  .step{border-left:3px solid var(--border);padding:6px 0 6px 12px;margin:10px 0}
+  .step .claim{font-weight:500}.step .der{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .eref{font-family:ui-monospace,monospace;font-size:11px;color:var(--accent2);border:1px solid #2f855a;border-radius:5px;padding:0 6px;margin-right:4px;cursor:pointer;background:#10241a}
+  .tl-step{display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)}.tl-step:last-child{border-bottom:none}
+  .tl-n{color:var(--muted);min-width:24px;font-variant-numeric:tabular-nums}.tl-main{flex:1}
+  .tool{display:inline-block;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;padding:1px 8px;border-radius:5px;border:1px solid var(--border);margin-right:6px}
+  .tool.search{color:#93c5fd;border-color:#3b6fd0}.tool.read{color:#c4b5fd;border-color:#6d5bd0}
+  .tool.run_python{color:#fbbf24;border-color:#b7791f}.tool.sympy_check{color:#86efac;border-color:#2f855a}
+  .tool.finish{color:#f0f0f0;border-color:#666}.tool.select_evidence,.tool.synthesize{color:#f9a8d4;border-color:#b83280}
+  .thought{color:#cbd5e1;margin:2px 0}
+  .obs{background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:6px 9px;font-family:ui-monospace,monospace;font-size:12px;color:#b6f0d4;white-space:pre-wrap;word-break:break-word;margin-top:4px}
+  .obs.err{color:#fca5a5}.args{font-family:ui-monospace,monospace;font-size:12px;color:var(--muted)}
+  .metrics{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+  .tabs{display:flex;gap:6px;margin:2px 0 10px}
+  .tab{font-size:12px;padding:3px 12px;border:1px solid var(--border);border-radius:20px;cursor:pointer;color:var(--muted);user-select:none}
+  .tab.on{color:var(--fg);border-color:var(--accent);background:#1b2740}
+  .train pre{background:#0c0e13;border:1px solid var(--border);border-radius:8px;padding:14px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.55;margin:0}
+  .tk-tag{color:#7dd3fc;font-weight:600}.tk-ev{color:#86efac}.tk-role{color:#c4b5fd;font-weight:600}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:30px 0}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <span class="repo"><a href="https://github.com/haolpku/DataFlow-MemTensor" target="_blank">github: haolpku/DataFlow-MemTensor</a></span>
+  <h1>DataFlow-MemTensor · 数学数据展示中心</h1>
+  <div class="sub">三类数学 Mid-train 数据 · 真实 LLM 合成 + 机器校验 · 点击分类下钻查看样本</div>
+</div></header>
+
+<div class="wrap">
+  <div id="home">
+    <div class="stats" id="stats"></div>
+    <div class="grid" id="catgrid"></div>
+  </div>
+  <div id="detail" style="display:none">
+    <span class="back" id="back">← 返回分类</span>
+    <div class="dhead"><span class="dot" id="dDot"></span><h2 id="dTitle"></h2></div>
+    <div class="dmeta" id="dMeta"></div>
+    <div id="dContent"></div>
+  </div>
+</div>
+<footer>DataFlow-MemTensor · 数据由 <span id="fmodel"></span> 合成,经 math_verify / sympy / grounding 校验</footer>
+
+<script src="data.js"></script>
+<script>
+const DB = window.DB || {catalog:[],samples:{}};
+const $ = id => document.getElementById(id);
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function parseTraj(o){let t=o.trajectory!==undefined?o.trajectory:o;if(typeof t==='string'){try{t=JSON.parse(t)}catch(e){}}return t}
+
+// ===== 训练文本构造 =====
+function trainEvidence(o){
+  const L=["[Evidence]"];
+  (o.evidences||[]).forEach(e=>L.push(`${e.evidence_id}: ${e.text}`));
+  L.push("","[Question] "+(o.instruction||o.question||""),"","[Reasoning]");
+  (o.steps||[]).forEach(s=>{L.push(`Step ${s.step} (from ${(s.evidence_ids||[]).join(", ")}): ${s.claim}`);if(s.derivation)L.push("    "+s.derivation)});
+  L.push("","[Answer] "+(o.generated_golden_answer||o.golden_answer||""));return L.join("\n");
+}
+function trainInterleaved(o){
+  const t=parseTraj(o),L=["[Task] "+(t.task||o.query||""),""];
+  (t.steps||[]).forEach(s=>{if(s.thought)L.push("Thought: "+s.thought);
+    const tool=s.action&&s.action.tool||"?",args=s.action&&s.action.args?JSON.stringify(s.action.args):"{}";
+    L.push(`Action: ${tool}(${args})`);
+    if(tool!=='finish'){let o2=s.observation;if(typeof o2!=='string')o2=JSON.stringify(o2);L.push("Observation: "+o2)}L.push("")});
+  L.push("Final Answer: "+(t.final_answer||""));return L.join("\n");
+}
+function trainCoT(o){return "[Question] "+(o.instruction||o.input||"")+"\n\n"+(o.generated_cot||o.output||"")}
+function hlTrain(txt){let s=esc(txt);
+  s=s.replace(/^(\[[^\]]+\])/gm,'<span class="tk-tag">$1</span>');
+  s=s.replace(/^(Thought|Action|Observation|Final Answer|Step \d+[^:]*):/gm,'<span class="tk-role">$1</span>:');
+  s=s.replace(/\b(ev\d+)\b/g,'<span class="tk-ev">$1</span>');return s;}
+
+// ===== 渲染三类 =====
+function renderCoT(o,i){
+  const cot=o.generated_cot||o.output||'',m=cot.match(/<think>([\s\S]*?)<\/think>/);
+  const think=m?m[1].trim():cot, after=m?cot.slice(m.index+m[0].length).trim():'';
+  return `<div class="rec"><div class="rec-head"><span class="idx">#${i}</span>
+    <span class="q">${esc(o.instruction||o.input||'')}</span></div><div class="rec-body">
+    <div class="kv">golden <span class="ans">${esc(o.golden_answer||'')}</span> &nbsp; extracted <span class="ans">${esc(o.extracted_answer||'')}</span> &nbsp; <b>${think.length}</b> 字符推理</div>
+    <div class="tabs"><span class="tab on" data-v="s">结构视图</span><span class="tab" data-v="t">训练格式</span></div>
+    <div class="vw vs"><details open><summary>思维链 &lt;think&gt;</summary><div class="think">${esc(think)}</div></details>${after?`<div style="margin-top:6px">${esc(after)}</div>`:''}</div>
+    <div class="vw vt" style="display:none"><div class="train"><pre>${hlTrain(trainCoT(o))}</pre></div></div>
+    </div></div>`;
+}
+function renderEvidence(o,i){
+  const uid='e'+i, D=new Set(o.distractor_ids||[]);
+  const evs=(o.evidences||[]).map(e=>{const d=D.has(e.evidence_id);
+    return `<div class="ev${d?' distract':''}" id="${uid}-${e.evidence_id}"><span class="eid">${esc(e.evidence_id)}</span>${esc(e.text)}${d?'<span class="dtag">干扰·未用</span>':''}</div>`}).join('');
+  const steps=(o.steps||[]).map(s=>{const refs=(s.evidence_ids||[]).map(id=>`<span class="eref" data-t="${uid}-${id}">${esc(id)}</span>`).join('');
+    return `<div class="step"><div class="claim"><b>${s.step}.</b> ${esc(s.claim)}</div><div class="der">${refs} ${esc(s.derivation||'')}</div></div>`}).join('');
+  const br=o.claim_binding_rate!=null?(o.claim_binding_rate*100).toFixed(0)+'%':'—';
+  return `<div class="rec"><div class="rec-head"><span class="idx">#${i}</span><span class="q">${esc(o.instruction||o.question||'')}</span></div><div class="rec-body">
+    <div class="kv"><b>${o.num_hops||(o.steps||[]).length}</b> 跳 &nbsp; 绑定率 <b>${br}</b> &nbsp; 证据 <b>${(o.evidences||[]).length}</b> 条${D.size?`(含 <b style="color:var(--warn)">${D.size}</b> 干扰)`:''} &nbsp; 答案 <span class="ans">${esc(o.generated_golden_answer||o.golden_answer||'')}</span></div>
+    <div class="tabs"><span class="tab on" data-v="s">结构视图</span><span class="tab" data-v="t">训练格式</span></div>
+    <div class="vw vs"><div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div><div class="kv" style="margin-bottom:4px">证据簇(点击高亮 / 橙色=干扰)</div>${evs}</div>
+      <div><div class="kv" style="margin-bottom:4px">推理链(点 evidence 徽标定位)</div>${steps}</div></div></div>
+    <div class="vw vt" style="display:none"><div class="train"><pre>${hlTrain(trainEvidence(o))}</pre></div></div>
+    </div></div>`;
+}
+function renderInterleaved(o,i){
+  const t=parseTraj(o);
+  const steps=(t.steps||[]).map((s,n)=>{const tool=(s.action&&s.action.tool)||'?',args=s.action&&s.action.args?JSON.stringify(s.action.args):'';
+    let obs=s.observation;if(typeof obs!=='string')obs=JSON.stringify(obs);const ec=s.ok===false?' err':'';
+    return `<div class="tl-step"><div class="tl-n">${n+1}</div><div class="tl-main">${s.thought?`<div class="thought">💭 ${esc(s.thought)}</div>`:''}
+      <div><span class="tool ${tool}">${esc(tool)}</span><span class="args">${esc(args)}</span></div>${obs&&obs!=='null'?`<div class="obs${ec}">${esc(obs)}</div>`:''}</div></div>`}).join('');
+  const ok=t.success,ov=o.traj_overall;
+  const mt=(l,v)=>v==null?'':`<span>${l} <b>${v}</b></span>`;
+  return `<div class="rec"><div class="rec-head"><span class="idx">#${i}</span><span class="q">${esc(t.task||o.query||'')}</span><span class="badge ${ok?'ok':'fail'}">${ok?'success':'failed'}</span></div><div class="rec-body">
+    <div class="kv"><b>${t.num_steps||(t.steps||[]).length}</b> 步 &nbsp; 最终答案 <span class="ans">${esc(t.final_answer||'')}</span></div>
+    <div class="tabs"><span class="tab on" data-v="s">结构视图</span><span class="tab" data-v="t">训练格式 (ReAct)</span></div>
+    <div class="vw vs">${steps}<div class="metrics">${mt('overall',ov!=null?Number(ov).toFixed(2):null)}${mt('goal',o.traj_goal_achievement)}${mt('efficiency',o.traj_efficiency)}${mt('coherence',o.traj_coherence)}${mt('tool_use',o.traj_tool_use)}</div>${o.traj_rationale?`<div class="kv" style="margin-top:4px">评语: ${esc(o.traj_rationale)}</div>`:''}</div>
+    <div class="vw vt" style="display:none"><div class="train"><pre>${hlTrain(trainInterleaved(o))}</pre></div></div>
+    </div></div>`;
+}
+const RENDER={cot:renderCoT,evidence:renderEvidence,interleaved:renderInterleaved};
+
+// ===== 导航 =====
+function renderHome(){
+  const cats=DB.catalog||[];
+  const total=cats.reduce((a,c)=>a+(c.count||0),0);
+  $('stats').innerHTML=`<div class="stat"><b>${cats.length}</b><span>数据类型</span></div>
+    <div class="stat"><b>${total}</b><span>样本总数</span></div>
+    <div class="stat"><b>${(DB.meta&&DB.meta.model)||'-'}</b><span>合成模型</span></div>
+    <div class="stat"><b>100%</b><span>机器校验通过</span></div>`;
+  $('catgrid').innerHTML=cats.map(c=>`<div class="ccard" data-k="${c.key}">
+    <span class="cat">${esc(c.cat||'')}</span>
+    <h3><span class="dot" style="background:${c.color||'#5b9dff'}"></span>${esc(c.title)}</h3>
+    <div class="desc">${esc(c.desc||'')}</div>
+    <div class="cnt">${c.count} 条样本 →</div></div>`).join('');
+  document.querySelectorAll('.ccard').forEach(el=>el.onclick=()=>openCat(el.dataset.k));
+  $('fmodel').textContent=(DB.meta&&DB.meta.model)||'LLM';
+}
+function openCat(key){
+  const c=(DB.catalog||[]).find(x=>x.key===key); if(!c)return;
+  location.hash=key;
+  $('home').style.display='none'; $('detail').style.display='block';
+  $('dDot').style.background=c.color||'#5b9dff'; $('dTitle').textContent=c.title;
+  $('dMeta').innerHTML=`${esc(c.cat||'')} · ${c.count} 条 · ${esc(c.desc||'')}`;
+  const rows=(DB.samples&&DB.samples[key])||[], fn=RENDER[c.kind]||RENDER.cot;
+  $('dContent').innerHTML=rows.map((o,i)=>fn(o,i)).join('');
+  wire();
+  window.scrollTo(0,0);
+}
+function goHome(){location.hash='';$('detail').style.display='none';$('home').style.display='block'}
+function wire(){
+  document.querySelectorAll('.tabs').forEach(tb=>{
+    tb.querySelectorAll('.tab').forEach(tab=>tab.onclick=()=>{
+      const rec=tab.closest('.rec'),v=tab.dataset.v;
+      tb.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t===tab));
+      rec.querySelector('.vs').style.display=v==='s'?'':'none';
+      rec.querySelector('.vt').style.display=v==='t'?'':'none';
+    });
+  });
+  document.querySelectorAll('.eref').forEach(el=>el.onclick=()=>{const t=document.getElementById(el.dataset.t);
+    if(t){document.querySelectorAll('.ev.hl').forEach(x=>x.classList.remove('hl'));t.classList.add('hl');
+      t.scrollIntoView({block:'nearest',behavior:'smooth'});setTimeout(()=>t.classList.remove('hl'),1600)}});
+  document.querySelectorAll('.ev').forEach(el=>el.onclick=()=>el.classList.toggle('hl'));
+}
+$('back').onclick=goHome;
+window.addEventListener('hashchange',()=>{const h=location.hash.slice(1);h?openCat(h):goHome()});
+renderHome();
+if(location.hash.slice(1)) openCat(location.hash.slice(1));
+</script>
+</body>
+</html>
