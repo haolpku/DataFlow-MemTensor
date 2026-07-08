@@ -2,15 +2,17 @@
 
 数学 Mid-train 数据生产扩展包,构建在 [DataFlow](../DataFlow) 与 [DataFlow-Agent](../DataFlow-Agent) 之上。
 
-对齐《MidTrain 数据方案》,提供两类数据的**可 scale** 生产算子与 pipeline:
+对齐《MidTrain 数据方案》,提供三类数据的**可 scale** 生产算子与 pipeline:
 
 | 数据类型 | 组件 | 对齐章节 |
 |----------|------|----------|
+| **长思维链 (long-CoT)** | `ReasoningLongCoTGenerator` + `ReasoningCoTAnswerFilter` | §4.2 |
 | **多步证据推理** | `ReasoningEvidenceChainGenerator` + `ReasoningEvidenceGroundingFilter` | §3.3 / §5.3 / §6 |
 | **长程交错思维** | `MathSandboxClient`(真实 sympy/python 工具 + 可插拔检索)+ DataFlow-Agent 轨迹栈 | §4.3 / §5.4 |
 
 > 这是一个**独立扩展包**,不修改上游框架。算子挂在 DataFlow 的 `OPERATOR_REGISTRY` 上,
 > 数据由**真实 LLM** 生成 —— 换 model / 题库 / 检索语料即可放量到 10B。
+> 自带一个零依赖的 **HTML 数据查看器**(`viewer/`),方便肉眼看 evidence / interleaved 数据。
 
 ---
 
@@ -21,17 +23,22 @@ DataFlow-MemTensor/
 ├── pyproject.toml
 ├── README.md
 ├── data/
-│   ├── evidence_seed.jsonl        # 证据 pipeline 的种子题
+│   ├── evidence_seed.jsonl        # 种子题(CoT / 证据 pipeline 共用)
 │   └── math_corpus.jsonl          # 检索语料(FlashRAG/BM25 通用 schema: {id, contents})
+├── viewer/
+│   └── index.html                # 单文件数据查看器(拖入 jsonl,自动识别三种类型)
 └── dataflow_memtensor/
-    ├── __init__.py                # import 即注册两个算子到 OPERATOR_REGISTRY
+    ├── __init__.py                # import 即注册所有算子到 OPERATOR_REGISTRY
     ├── operators/
-    │   ├── reasoning_evidence_chain_generator.py    # 生成 evidences[]+steps[](每步绑 evidence_id)
-    │   └── reasoning_evidence_grounding_filter.py   # 按 绑定率/跳数/引用真实性/答案校验 过滤
+    │   ├── reasoning_long_cot_generator.py         # <think>长推理</think> + \boxed{答案}
+    │   ├── reasoning_cot_answer_filter.py          # 抽 boxed,math_verify 校验
+    │   ├── reasoning_evidence_chain_generator.py   # 生成 evidences[]+steps[](每步绑 evidence_id)
+    │   └── reasoning_evidence_grounding_filter.py  # 按 绑定率/跳数/引用真实性/答案校验 过滤
     ├── sandbox/
     │   ├── math_client.py         # MathSandboxClient:7 工具,search/read 走可插拔检索
     │   └── retrievers.py          # DictRetriever / BM25Retriever / FlashRAGRetriever
     └── pipelines/
+        ├── cot_pipeline.py            # 长 CoT pipeline
         ├── evidence_pipeline.py       # 多步证据推理 pipeline
         └── interleaved_pipeline.py    # 长程交错思维 pipeline
 ```
@@ -134,10 +141,13 @@ for s in [1, 2, 3, 4]:
 
 ## 运行(速查)
 
-两条 pipeline 都需要真实 LLM API(见上节完整步骤):
+三条 pipeline 都需要真实 LLM API(见上节完整步骤):
 
 ```bash
 export DF_API_KEY=sk-...  DF_API_URL=http://.../v1/chat/completions  DF_MODEL=gpt-4.1-mini
+
+# 长思维链: 种子题 → 生成 <think>+boxed → math_verify 校验
+python -m dataflow_memtensor.pipelines.cot_pipeline
 
 # 多步证据推理: 种子题 → 生成证据链 → grounding+math_verify 过滤
 python -m dataflow_memtensor.pipelines.evidence_pipeline
@@ -146,6 +156,31 @@ python -m dataflow_memtensor.pipelines.evidence_pipeline
 export MEMTENSOR_CORPUS=data/math_corpus.jsonl   # 挂真实语料走 BM25;不设则用内置 Dict 兜底
 python -m dataflow_memtensor.pipelines.interleaved_pipeline
 ```
+
+> 长 CoT pipeline 是 DataFlow `reasoning_math_pipeline`(11 步)的**精简版**,只保留
+> 「生成 → 答案校验」两个核心步(去掉题目合成/难度/分类/格式/长度/ngram 等步)。
+
+---
+
+## 数据查看器(前端)
+
+evidence 和 interleaved 数据嵌套很深,肉眼看 jsonl 很痛苦。`viewer/index.html` 是一个
+**零依赖单文件网页**,直接双击用浏览器打开即可:
+
+```bash
+open viewer/index.html          # macOS(或浏览器里打开该文件)
+```
+
+- **拖入** 任意 `.jsonl`(或点「选择文件」),**自动识别** long-CoT / evidence / interleaved 并分别渲染;
+- 点「示例」按钮看内置样例(无需数据文件);
+- 三种数据的专属视图:
+  - **long-CoT**:`<think>` 折叠展开 + boxed 答案对比;
+  - **evidence**:左证据簇 / 右推理链,点击 step 里的 `evidence` 徽标会**高亮定位**它依赖的证据(claim↔evidence 联动);
+  - **interleaved**:`(thought → tool → observation)` 时间线,工具彩色徽标,observation 真实留痕,附质量四轴评分;
+- 顶部可按类型筛选,并显示各类型条数统计。
+
+> 可把任意一步的 cache 文件拖进去看,例如 `cache_evidence/evidence_step_step1.jsonl`
+> (生成器原始输出)对比 `_step2.jsonl`(过滤后),直观看到过滤掉了什么。
 
 ---
 

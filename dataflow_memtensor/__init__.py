@@ -21,6 +21,8 @@ DataFlow-MemTensor — 数学 Mid-train 数据生产扩展包.
 from .operators import (
     ReasoningEvidenceChainGenerator,
     ReasoningEvidenceGroundingFilter,
+    ReasoningLongCoTGenerator,
+    ReasoningCoTAnswerFilter,
 )
 from .sandbox import MathSandboxClient
 from .sandbox.retrievers import (
@@ -33,6 +35,8 @@ from .sandbox.retrievers import (
 __all__ = [
     "ReasoningEvidenceChainGenerator",
     "ReasoningEvidenceGroundingFilter",
+    "ReasoningLongCoTGenerator",
+    "ReasoningCoTAnswerFilter",
     "MathSandboxClient",
     "RetrieverABC",
     "DictRetriever",

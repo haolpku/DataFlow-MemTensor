@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataFlow-MemTensor 数据查看器</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --panel2: #1f232c; --border: #2a2f3a;
+    --fg: #e6e9ef; --muted: #8b93a3; --accent: #5b9dff; --accent2: #22c55e;
+    --warn: #f59e0b; --bad: #ef4444; --think: #2a2233; --evbg: #14261c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.6; }
+  header { padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+           display: flex; align-items: center; gap: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 10; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+  button, .filebtn, select {
+    background: var(--panel2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 7px; padding: 7px 12px; cursor: pointer; font-size: 13px; }
+  button:hover, .filebtn:hover { border-color: var(--accent); }
+  .filebtn input { display: none; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+           border: 1px solid var(--border); }
+  .badge.cot { color: #c4b5fd; border-color: #6d5bd0; }
+  .badge.evidence { color: #86efac; border-color: #2f855a; }
+  .badge.interleaved { color: #93c5fd; border-color: #3b6fd0; }
+  .badge.ok { color: var(--accent2); border-color: var(--accent2); }
+  .badge.fail { color: var(--bad); border-color: var(--bad); }
+  #drop { margin: 40px auto; max-width: 640px; padding: 48px; text-align: center;
+          border: 2px dashed var(--border); border-radius: 14px; color: var(--muted); }
+  #drop.hover { border-color: var(--accent); color: var(--fg); }
+  #stats { padding: 8px 20px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border);
+           display: none; gap: 18px; flex-wrap: wrap; }
+  #list { padding: 16px 20px 60px; max-width: 1100px; margin: 0 auto; }
+  .rec { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+         margin-bottom: 16px; overflow: hidden; }
+  .rec-head { padding: 12px 16px; background: var(--panel2); border-bottom: 1px solid var(--border);
+              display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .rec-head .idx { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .rec-head .q { flex: 1; min-width: 200px; font-weight: 500; }
+  .rec-body { padding: 14px 16px; }
+  .kv { color: var(--muted); font-size: 12px; }
+  .kv b { color: var(--fg); font-weight: 600; }
+  .ans { font-family: ui-monospace, "SF Mono", Menlo, monospace; background: #10241a; color: #86efac;
+         padding: 2px 8px; border-radius: 6px; border: 1px solid #2f855a; }
+  details { margin: 8px 0; }
+  details > summary { cursor: pointer; color: var(--accent); user-select: none; padding: 4px 0; }
+  .think { background: var(--think); border: 1px solid #3a2f45; border-radius: 8px; padding: 12px;
+           white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: #d9cfe6; }
+  /* evidence */
+  .ev { background: var(--evbg); border: 1px solid #234; border-radius: 8px; padding: 8px 10px; margin: 6px 0;
+        cursor: pointer; transition: border-color .15s, background .15s; }
+  .ev .eid { font-family: ui-monospace, monospace; color: var(--accent2); font-weight: 700; margin-right: 8px; }
+  .ev.hl { border-color: var(--accent2); background: #17321f; box-shadow: 0 0 0 2px rgba(34,197,94,.25); }
+  .step { border-left: 3px solid var(--border); padding: 6px 0 6px 12px; margin: 10px 0; }
+  .step .claim { font-weight: 500; }
+  .step .der { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .eref { font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent2);
+          border: 1px solid #2f855a; border-radius: 5px; padding: 0 6px; margin-right: 4px; cursor: pointer; background: #10241a; }
+  .eref:hover { background: #17321f; }
+  /* interleaved timeline */
+  .tl-step { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+  .tl-step:last-child { border-bottom: none; }
+  .tl-n { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 24px; }
+  .tl-main { flex: 1; }
+  .tool { display: inline-block; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
+          padding: 1px 8px; border-radius: 5px; border: 1px solid var(--border); margin-right: 6px; }
+  .tool.search{color:#93c5fd;border-color:#3b6fd0}.tool.read{color:#c4b5fd;border-color:#6d5bd0}
+  .tool.run_python{color:#fbbf24;border-color:#b7791f}.tool.sympy_check{color:#86efac;border-color:#2f855a}
+  .tool.finish{color:#f0f0f0;border-color:#666}.tool.select_evidence,.tool.synthesize{color:#f9a8d4;border-color:#b83280}
+  .thought { color: #cbd5e1; margin: 2px 0; }
+  .obs { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px;
+         font-family: ui-monospace, monospace; font-size: 12px; color: #b6f0d4; white-space: pre-wrap;
+         word-break: break-word; margin-top: 4px; }
+  .obs.err { color: #fca5a5; }
+  .args { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+  .metrics { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .bar { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; width: 60px; display: inline-block; vertical-align: middle; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .empty { color: var(--muted); text-align: center; padding: 40px; }
+  code { font-family: ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>DataFlow-MemTensor 数据查看器</h1>
+    <div class="sub">拖入或选择 jsonl —— 自动识别 long-CoT / evidence / interleaved</div>
+  </div>
+  <div class="controls">
+    <select id="typeFilter" title="按类型筛选"><option value="">全部类型</option>
+      <option value="cot">long-CoT</option><option value="evidence">evidence</option>
+      <option value="interleaved">interleaved</option></select>
+    <label class="filebtn">选择文件<input type="file" id="file" accept=".jsonl,.json,.txt"></label>
+    <button id="sampleBtn" title="加载内置示例">示例</button>
+  </div>
+</header>
+
+<div id="stats"></div>
+<div id="drop">把 <b>.jsonl</b> 文件拖到这里,或点右上角「选择文件」<br><span class="sub">也可点「示例」看内置样例</span></div>
+<div id="list"></div>
+
+<script>
+const listEl = document.getElementById('list');
+const statsEl = document.getElementById('stats');
+const dropEl = document.getElementById('drop');
+let RECORDS = [];
+
+// ---------- 类型识别 ----------
+function detectType(o){
+  if (o.trajectory !== undefined || (o.steps && o.action) ) return 'interleaved';
+  if (o.trajectory !== undefined) return 'interleaved';
+  if (Array.isArray(o.evidences) && Array.isArray(o.steps)) return 'evidence';
+  if (o.generated_cot !== undefined || (typeof o.output==='string' && o.output.includes('<think>'))) return 'cot';
+  if (o.steps && Array.isArray(o.steps) && o.steps[0] && o.steps[0].action) return 'interleaved';
+  return 'unknown';
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function parseTraj(o){ let t=o.trajectory!==undefined?o.trajectory:o; if(typeof t==='string'){try{t=JSON.parse(t)}catch(e){}} return t; }
+
+// ---------- 渲染:long-CoT ----------
+function renderCoT(o, i){
+  const cot = o.generated_cot || o.output || '';
+  const m = cot.match(/<think>([\s\S]*?)<\/think>/);
+  const think = m ? m[1].trim() : cot;
+  const after = m ? cot.slice(m.index + m[0].length).trim() : '';
+  const ans = o.extracted_answer || o.golden_answer || '';
+  return `<div class="rec" data-type="cot">
+    <div class="rec-head"><span class="idx">#${i}</span><span class="badge cot">long-CoT</span>
+      <span class="q">${esc(o.instruction || o.input || '')}</span></div>
+    <div class="rec-body">
+      <div class="kv">golden: <span class="ans">${esc(o.golden_answer||'')}</span>
+        &nbsp; extracted: <span class="ans">${esc(o.extracted_answer||'')}</span>
+        &nbsp; <b>${think.length}</b> 字符推理</div>
+      <details open><summary>思维链 &lt;think&gt;</summary><div class="think">${esc(think)}</div></details>
+      ${after?`<div style="margin-top:6px">${esc(after)}</div>`:''}
+    </div></div>`;
+}
+
+// ---------- 渲染:evidence(claim ↔ evidence 高亮联动) ----------
+function renderEvidence(o, i){
+  const uid = 'e'+i;
+  const evs = (o.evidences||[]).map(e=>
+    `<div class="ev" id="${uid}-${e.evidence_id}" data-eid="${e.evidence_id}">
+        <span class="eid">${esc(e.evidence_id)}</span>${esc(e.text)}</div>`).join('');
+  const steps = (o.steps||[]).map(s=>{
+    const refs = (s.evidence_ids||[]).map(id=>
+      `<span class="eref" data-target="${uid}-${id}">${esc(id)}</span>`).join('');
+    return `<div class="step"><div class="claim"><b>${s.step}.</b> ${esc(s.claim)}</div>
+      <div class="der">${refs} ${esc(s.derivation||'')}</div></div>`;
+  }).join('');
+  const br = o.claim_binding_rate!=null ? (o.claim_binding_rate*100).toFixed(0)+'%' : '—';
+  return `<div class="rec" data-type="evidence">
+    <div class="rec-head"><span class="idx">#${i}</span><span class="badge evidence">evidence</span>
+      <span class="q">${esc(o.instruction || o.question || '')}</span></div>
+    <div class="rec-body">
+      <div class="kv"><b>${o.num_hops||(o.steps||[]).length}</b> 跳 &nbsp; 绑定率 <b>${br}</b>
+        &nbsp; 答案 <span class="ans">${esc(o.generated_golden_answer||o.golden_answer||'')}</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px">
+        <div><div class="kv" style="margin-bottom:4px">证据簇 (点击高亮)</div>${evs}</div>
+        <div><div class="kv" style="margin-bottom:4px">推理链 (点 evidence 徽标定位)</div>${steps}</div>
+      </div>
+    </div></div>`;
+}
+
+// ---------- 渲染:interleaved(r/a/o 时间线) ----------
+function renderInterleaved(o, i){
+  const t = parseTraj(o);
+  const steps = (t.steps||[]).map((s,n)=>{
+    const tool = (s.action&&s.action.tool)||'?';
+    const args = s.action&&s.action.args ? JSON.stringify(s.action.args) : '';
+    let obs = s.observation; if(typeof obs!=='string') obs = JSON.stringify(obs, null, 0);
+    const errCls = s.ok===false?' err':'';
+    return `<div class="tl-step"><div class="tl-n">${n+1}</div><div class="tl-main">
+      ${s.thought?`<div class="thought">💭 ${esc(s.thought)}</div>`:''}
+      <div><span class="tool ${tool}">${esc(tool)}</span><span class="args">${esc(args)}</span></div>
+      ${obs&&obs!=='null'?`<div class="obs${errCls}">${esc(obs)}</div>`:''}
+    </div></div>`;
+  }).join('');
+  const ok = t.success;
+  const ov = o.traj_overall;
+  const metric = (label,v)=> v==null?'':`<span>${label} <b>${v}</b></span>`;
+  return `<div class="rec" data-type="interleaved">
+    <div class="rec-head"><span class="idx">#${i}</span><span class="badge interleaved">interleaved</span>
+      <span class="q">${esc(t.task||o.query||'')}</span>
+      <span class="badge ${ok?'ok':'fail'}">${ok?'success':'failed'}</span></div>
+    <div class="rec-body">
+      <div class="kv"><b>${t.num_steps||(t.steps||[]).length}</b> 步 &nbsp;
+        最终答案 <span class="ans">${esc(t.final_answer||'')}</span></div>
+      ${steps}
+      <div class="metrics">
+        ${metric('overall', ov!=null?Number(ov).toFixed(2):null)}
+        ${metric('goal', o.traj_goal_achievement)}${metric('efficiency', o.traj_efficiency)}
+        ${metric('coherence', o.traj_coherence)}${metric('tool_use', o.traj_tool_use)}
+      </div>
+      ${o.traj_rationale?`<div class="kv" style="margin-top:4px">评语: ${esc(o.traj_rationale)}</div>`:''}
+    </div></div>`;
+}
+
+function renderOne(o,i){
+  const t = detectType(o);
+  if(t==='cot') return renderCoT(o,i);
+  if(t==='evidence') return renderEvidence(o,i);
+  if(t==='interleaved') return renderInterleaved(o,i);
+  return `<div class="rec"><div class="rec-head"><span class="idx">#${i}</span>
+    <span class="badge">unknown</span></div><div class="rec-body"><pre>${esc(JSON.stringify(o,null,2))}</pre></div></div>`;
+}
+
+function render(){
+  const filter = document.getElementById('typeFilter').value;
+  const rows = RECORDS.map((o,i)=>({o,i,t:detectType(o)}))
+                      .filter(r=> !filter || r.t===filter);
+  if(!RECORDS.length){ listEl.innerHTML=''; return; }
+  listEl.innerHTML = rows.length ? rows.map(r=>renderOne(r.o,r.i)).join('')
+                                 : '<div class="empty">该类型下没有记录</div>';
+  wireEvidence();
+  // stats
+  const c={cot:0,evidence:0,interleaved:0,unknown:0};
+  RECORDS.forEach(o=>c[detectType(o)]++);
+  statsEl.style.display='flex';
+  statsEl.innerHTML = `<span>共 <b style="color:var(--fg)">${RECORDS.length}</b> 条</span>`+
+    Object.entries(c).filter(([k,v])=>v).map(([k,v])=>`<span>${k}: <b style="color:var(--fg)">${v}</b></span>`).join('');
+}
+
+// evidence claim↔evidence 联动
+function wireEvidence(){
+  document.querySelectorAll('.eref').forEach(el=>{
+    el.onclick=()=>{ const t=document.getElementById(el.dataset.target);
+      if(t){ document.querySelectorAll('.ev.hl').forEach(x=>x.classList.remove('hl'));
+        t.classList.add('hl'); t.scrollIntoView({block:'nearest',behavior:'smooth'});
+        setTimeout(()=>t.classList.remove('hl'),1600);} };
+  });
+  document.querySelectorAll('.ev').forEach(el=>{
+    el.onclick=()=>{ el.classList.toggle('hl'); };
+  });
+}
+
+// ---------- 加载 ----------
+function loadText(text){
+  const recs=[];
+  text.split('\n').forEach(line=>{ line=line.trim(); if(!line) return;
+    try{ recs.push(JSON.parse(line)); }catch(e){} });
+  RECORDS = recs;
+  dropEl.style.display = recs.length?'none':'block';
+  render();
+}
+document.getElementById('file').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f);
+};
+document.getElementById('typeFilter').onchange=render;
+['dragover','dragenter'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.add('hover');}));
+['dragleave','drop'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.remove('hover');}));
+document.body.addEventListener('drop',e=>{ e.preventDefault(); dropEl.classList.remove('hover');
+  const f=e.dataTransfer.files[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
+
+// 内置示例(每类一条)
+document.getElementById('sampleBtn').onclick=()=>{
+  const sample=[
+    {instruction:"Find the product of the two roots of x^2 - 5x - 8 = 0.", golden_answer:"-8",
+     extracted_answer:"-8", generated_cot:"<think>\nBy Vieta's formulas, for x^2+px+q=0 the product of roots is q.\nHere p=-5, q=-8, so the product of the roots is -8.\nCheck: roots are (5±sqrt(57))/2; their product is (25-57)/4 = -32/4 = -8. ✓\n</think>\nThe product of the roots is \\boxed{-8}."},
+    {instruction:"In a circle of radius 13, a chord has length 10. Find the distance from the center to the chord.",
+     golden_answer:"12", num_hops:3, claim_binding_rate:1.0, generated_golden_answer:"12",
+     evidences:[{evidence_id:"ev1",text:"Circle radius r=13, chord length 10."},
+                {evidence_id:"ev2",text:"Perpendicular from center bisects a chord: d=sqrt(r^2-(L/2)^2)."},
+                {evidence_id:"ev3",text:"Task: exact distance from center to chord."}],
+     steps:[{step:1,claim:"Half the chord is 5.",evidence_ids:["ev1"],derivation:"10/2=5."},
+            {step:2,claim:"d = sqrt(13^2 - 5^2).",evidence_ids:["ev2","ev1"],derivation:"Apply the theorem."},
+            {step:3,claim:"d = 12.",evidence_ids:["ev2","ev3"],derivation:"sqrt(144)=12."}]},
+    {query:"Find the product of the two roots of x^2 - 5x - 8 = 0.",
+     traj_overall:1.0, traj_goal_achievement:5, traj_efficiency:5, traj_coherence:5, traj_tool_use:5,
+     traj_rationale:"Recalled Vieta, computed and verified.",
+     trajectory:{task:"Find the product of the two roots of x^2 - 5x - 8 = 0.", success:true, num_steps:4, final_answer:"-8",
+       steps:[
+        {thought:"Recall the relevant theorem.",action:{tool:"search",args:{query:"vieta product roots"}},observation:{results:[{id:"vieta",snippet:"Vieta: r1*r2=q"}]},ok:true},
+        {thought:"Read the full statement.",action:{tool:"read",args:{id:"vieta"}},observation:{id:"vieta",text:"For x^2+px+q=0, r1*r2=q."},ok:true},
+        {thought:"Compute explicitly.",action:{tool:"run_python",args:{code:"import sympy as sp;x=sp.symbols('x');r=sp.solve(x**2-5*x-8,x);result=sp.expand(r[0]*r[1])"}},observation:{stdout:"",result:"-8"},ok:true},
+        {thought:"Report.",action:{tool:"finish",args:{answer:"-8"}},observation:{answer:"-8"},ok:true}]}}
+  ];
+  RECORDS=sample; dropEl.style.display='none'; document.getElementById('typeFilter').value=''; render();
+};
+</script>
+</body>
+</html>

@@ -12,3 +12,6 @@ cache_*/
 data/*
 !data/README.md
 
+# built sample data for the viewer (not published)
+viewer/sample_combined.jsonl
+
