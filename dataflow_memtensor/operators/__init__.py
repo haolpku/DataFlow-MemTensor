@@ -4,10 +4,14 @@ from .reasoning_evidence_chain_generator import ReasoningEvidenceChainGenerator
 from .reasoning_evidence_grounding_filter import ReasoningEvidenceGroundingFilter
 from .reasoning_long_cot_generator import ReasoningLongCoTGenerator
 from .reasoning_cot_answer_filter import ReasoningCoTAnswerFilter
+from .cot_quality_filter import CoTQualityFilter
+from .decontamination_filter import DecontaminationFilter
 
 __all__ = [
     "ReasoningEvidenceChainGenerator",
     "ReasoningEvidenceGroundingFilter",
     "ReasoningLongCoTGenerator",
     "ReasoningCoTAnswerFilter",
+    "CoTQualityFilter",
+    "DecontaminationFilter",
 ]

@@ -27,9 +27,16 @@ def load(path):
     return rows
 
 
-cot = load("cache_cot/cot_step_step2.jsonl")
-evidence = load("cache_evidence/evidence_step_step2.jsonl")
-inter = load("cache_interleaved/interleaved_step_step4.jsonl")
+def load_last(prefix):
+    """读某类 pipeline 的最后一步产物(step 编号最大的)。"""
+    import glob
+    files = sorted(glob.glob(os.path.join(ROOT, prefix + "*.jsonl")))
+    return load(os.path.relpath(files[-1], ROOT)) if files else []
+
+
+cot = load_last("cache_cot/cot_step_step")
+evidence = load_last("cache_evidence/evidence_step_step")
+inter = load_last("cache_interleaved/interleaved_step_step")
 
 catalog = [
     {"key": "long_cot", "title": "长思维链 Long-CoT", "cat": "可验证数学题",

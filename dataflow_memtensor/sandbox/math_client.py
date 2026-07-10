@@ -232,6 +232,8 @@ class MathSandboxClient(SandboxClientABC):
             "str": str, "list": list, "dict": dict, "tuple": tuple, "set": set,
             "enumerate": enumerate, "zip": zip, "sorted": sorted, "map": map,
             "filter": filter, "print": print, "True": True, "False": False, "None": None,
+            "all": all, "any": any, "divmod": divmod, "reversed": reversed,
+            "bool": bool, "frozenset": frozenset, "complex": complex,
             "__import__": _guarded_import,
         }
         return {"__builtins__": allowed_builtins, "sp": sp, "sympy": sp, "math": math}

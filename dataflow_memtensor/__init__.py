@@ -23,6 +23,8 @@ from .operators import (
     ReasoningEvidenceGroundingFilter,
     ReasoningLongCoTGenerator,
     ReasoningCoTAnswerFilter,
+    CoTQualityFilter,
+    DecontaminationFilter,
 )
 from .sandbox import MathSandboxClient
 from .sandbox.retrievers import (
@@ -37,6 +39,8 @@ __all__ = [
     "ReasoningEvidenceGroundingFilter",
     "ReasoningLongCoTGenerator",
     "ReasoningCoTAnswerFilter",
+    "CoTQualityFilter",
+    "DecontaminationFilter",
     "MathSandboxClient",
     "RetrieverABC",
     "DictRetriever",

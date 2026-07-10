@@ -29,6 +29,8 @@ from dataflow.core import LLMServingABC
 from dataflow_memtensor.operators import (
     ReasoningLongCoTGenerator,
     ReasoningCoTAnswerFilter,
+    CoTQualityFilter,
+    DecontaminationFilter,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,7 +59,7 @@ def build_llm():
 
 class LongCoTPipeline:
     def __init__(self, seed_file: str = _DEFAULT_SEED, llm_serving: LLMServingABC = None,
-                 cache_path: str = "./cache_cot"):
+                 cache_path: str = "./cache_cot", decontam_benchmark_file: str = None):
         self.storage = FileStorage(
             first_entry_file_name=seed_file,
             cache_path=cache_path,
@@ -67,24 +69,44 @@ class LongCoTPipeline:
         self.llm_serving = llm_serving or build_llm()
 
         self.cot_generator = ReasoningLongCoTGenerator(llm_serving=self.llm_serving)
+        self.quality_filter = CoTQualityFilter(
+            min_think_chars=120,
+            min_distinct_ratio=0.35,
+            max_restate_overlap=0.92,
+        )
         self.answer_filter = ReasoningCoTAnswerFilter(
             compare_method="math_verify",
             require_think_tag=True,
         )
+        # 去污染:默认无黑名单时不剔除并告警;放量前传 benchmark_file。
+        self.decontam = DecontaminationFilter(
+            benchmark_file=decontam_benchmark_file,
+            ngram=10, overlap_threshold=0.5,
+        )
 
     def forward(self):
+        # S1 生成 CoT
         self.cot_generator.run(
             storage=self.storage.step(),
             input_key="instruction",
             output_key="generated_cot",
             output_answer_key="extracted_answer",
         )
+        # S2 质量过滤(空壳/复读/复述题面)—— 便宜,先扔没营养的
+        self.quality_filter.run(
+            storage=self.storage.step(),
+            input_cot_key="generated_cot",
+            input_question_key="instruction",
+        )
+        # S3 答案校验(math_verify)
         self.answer_filter.run(
             storage=self.storage.step(),
             input_cot_key="generated_cot",
             input_answer_key="extracted_answer",
             input_gt_key="golden_answer",
         )
+        # S4 去污染(评测集 10-gram 黑名单)—— 红线
+        self.decontam.run(storage=self.storage.step())
 
 
 def main():
