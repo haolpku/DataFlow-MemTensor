@@ -25,6 +25,7 @@ from .operators import (
     ReasoningCoTAnswerFilter,
     CoTQualityFilter,
     DecontaminationFilter,
+    AnswerNormalizeOperator,
 )
 from .sandbox import MathSandboxClient
 from .sandbox.retrievers import (
@@ -41,6 +42,7 @@ __all__ = [
     "ReasoningCoTAnswerFilter",
     "CoTQualityFilter",
     "DecontaminationFilter",
+    "AnswerNormalizeOperator",
     "MathSandboxClient",
     "RetrieverABC",
     "DictRetriever",

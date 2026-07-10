@@ -6,6 +6,7 @@ from .reasoning_long_cot_generator import ReasoningLongCoTGenerator
 from .reasoning_cot_answer_filter import ReasoningCoTAnswerFilter
 from .cot_quality_filter import CoTQualityFilter
 from .decontamination_filter import DecontaminationFilter
+from .answer_normalize_operator import AnswerNormalizeOperator
 
 __all__ = [
     "ReasoningEvidenceChainGenerator",
@@ -14,4 +15,5 @@ __all__ = [
     "ReasoningCoTAnswerFilter",
     "CoTQualityFilter",
     "DecontaminationFilter",
+    "AnswerNormalizeOperator",
 ]

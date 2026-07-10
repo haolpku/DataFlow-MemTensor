@@ -42,6 +42,7 @@ from dataflow_agent.select.trajectory_selector import TrajectorySelector
 
 from dataflow_memtensor.sandbox import MathSandboxClient
 from dataflow_memtensor.sandbox.retrievers import BM25Retriever
+from dataflow_memtensor.operators import AnswerNormalizeOperator
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
@@ -144,6 +145,9 @@ def main(seed_tasks=None, out_path=None, cache_path="./cache_interleaved"):
     TrajectorySelector(
         max_selected=50, min_depth=2, mode="rows",
     ).run(storage.step(), input_key="trajectory", output_key="selected_trajectories")
+
+    # Stage 5: 规范化 final_answer 为纯值        -> interleaved_step_step5.jsonl
+    AnswerNormalizeOperator().run(storage.step(), traj_key="trajectory")
 
     df = storage.step().read(output_type="dataframe")
     out_path = out_path or os.path.join(_REPO_ROOT, "interleaved_output.jsonl")
