@@ -160,8 +160,11 @@ GSM-Hard/Plus/Symbolic, LongBench v1/v2, RULER, FRAMES, Bamboogle, FanOutQA
 
 ### 从 demo 到生产的待办(诚实清单)
 - [ ] **接真实题库**:seed 从当前手写/小样本换成 §1.1 的 HF 数据集(`FileStorage` 支持 `hf:` 前缀直读)
-- [ ] **去污染扫描**:接入 §4 的 10-gram 黑名单(当前未做)
-- [ ] **难度分层器**:自动给题目打 L1-L4(可用 LLM scorer 或来源标签)
+- [x] **去污染扫描**:接入 §4 的 10-gram 黑名单(`DecontaminationFilter`)
+- [x] **难度分层器**:自动给题目打 L1-L4(`DifficultyTagOperator`:来源标签初分 + LLM scorer 兜底)
+- [x] **来源/合成血缘**:`ProvenanceOperator` 盖 problem_source/synthetic_flag/gen_model/created_at(核查文档 §5)
+- [x] **失败池 + 通过率**:各 filter 淘汰样本落盘 + 打印通过率(核查文档 §3/§七)
+- [x] **判分独立**:interleaved 判分改用独立模型(核查文档 §2)
 - [ ] **多解生成**:L2-L3 ≥3 解、L4 ≥5 解(Teacher rollout)
 - [ ] **去重**:题面/答案近似去重
 - [ ] **分片 + manifest**:大规模下记录来源/难度/长度/license 血缘

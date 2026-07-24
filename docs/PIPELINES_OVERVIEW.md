@@ -19,22 +19,27 @@
 
 ```
 seed(题 + golden_answer)
-  → [S1] ReasoningLongCoTGenerator   # LLM 生成 <think>长推理</think> + \boxed{答案}
-  → [S2] CoTQualityFilter            # 剔除空壳/复读机/仅复述题面
-  → [S3] ReasoningCoTAnswerFilter    # 抽 boxed → math_verify 对比 golden_answer
-  → [S4] DecontaminationFilter       # 评测集 10-gram 黑名单(红线;需传 benchmark_file)
-  → 通过入库(不合格的丢弃)
+  → [S0]  ProvenanceOperator         # 盖血缘:problem_source/synthetic_flag/gen_model/created_at
+  → [S0.5]DifficultyTagOperator      # 按来源标签打 L1-L4(LLM 兜底未命中的)
+  → [S1]  ReasoningLongCoTGenerator  # LLM 生成 <think>长推理</think> + \boxed{答案}
+  → [S2]  CoTQualityFilter           # 剔除空壳/复读机/仅复述题面   ┐
+  → [S3]  ReasoningCoTAnswerFilter   # 抽 boxed → math_verify 校验   ├─ 淘汰样本 → failure_pool.jsonl
+  → [S4]  DecontaminationFilter      # 评测集 10-gram 黑名单(红线) ┘  (带 _drop_stage/_drop_reason)
+  → 通过入库(不合格的落失败池,不再静默丢弃)
 ```
 
 | 算子 | 来源 | 作用 | 关键参数 |
 |------|------|------|----------|
+| `ProvenanceOperator` | 本仓库 | 盖血缘字段(来源/是否合成/生成模型/时间戳),已有值不覆盖 | `problem_source`,`synthetic_flag`,`gen_model`,`pipeline` |
+| `DifficultyTagOperator` | 本仓库 | 来源标签初分 L1-L4 + LLM 兜底,可选按配比抽样 | `llm_serving`(可选),`target_ratio`,`force_llm` |
 | `ReasoningLongCoTGenerator` | 本仓库 | 生成 CoT,抽 `\boxed{}` 到 `extracted_answer` | — |
-| `CoTQualityFilter` | 本仓库 | 剔除空壳(think过短)/复读(n-gram自重复)/复述题面 | `min_think_chars=120`,`min_distinct_ratio=0.35`,`max_restate_overlap=0.92` |
-| `ReasoningCoTAnswerFilter` | 本仓库 | 答案校验过滤 | `compare_method="math_verify"`,`require_think_tag=True` |
-| `DecontaminationFilter` | 本仓库 | 评测集去污染(红线) | `benchmark_file`,`ngram=10`,`overlap_threshold=0.5` |
+| `CoTQualityFilter` | 本仓库 | 剔除空壳(think过短)/复读(n-gram自重复)/复述题面 | `min_think_chars=120`,`min_distinct_ratio=0.35`,`failure_pool_path` |
+| `ReasoningCoTAnswerFilter` | 本仓库 | 答案校验过滤 | `compare_method="math_verify"`,`require_think_tag=True`,`failure_pool_path` |
+| `DecontaminationFilter` | 本仓库 | 评测集去污染(红线) | `benchmark_file`,`ngram=10`,`failure_pool_path` |
 
-- **产物字段**:`instruction / generated_cot / extracted_answer / golden_answer`
-- **落盘**:`cache_cot/cot_step_step1..4.jsonl`(生成/质量/校验/去污染)
+- **产物字段**:`instruction / generated_cot / extracted_answer / golden_answer / difficulty / problem_source / synthetic_flag / gen_model / created_at`
+- **落盘**:`cache_cot/cot_step_step1..6.jsonl`(血缘/难度/生成/质量/校验/去污染)+ `cache_cot/failure_pool.jsonl`(全部被淘汰样本)
+- **通过率与失败池**:每个 filter 都打印 `[pass_rate] kept X/Y (pass_rate Z%)`,并把被淘汰行(附 `_drop_stage`/`_drop_reason`)追加进失败池——**交付时通过率与失败池一并给出**(对齐核查文档 §3/§七)。
 - **真实结果**:24/24 通过质量+答案校验(`math_verify` 正确识别 `\frac{40}{3}` == `40/3`)。去污染在测试黑名单上验证有效(揪出混入的 gcd、7^100 两道评测题)。
 
 ---
@@ -86,7 +91,7 @@ seed(题 → 包装成 agent 任务)
 |------|------|------|----------|
 | S1 | `AgentExploreGenerator` | DataFlow-Agent | `max_steps=8`,`max_workers=4` |
 | — | `MathSandboxClient` | **本仓库新建** | 7 工具:search/read/**run_python/sympy_check(真实执行)**/select_evidence/synthesize/finish;检索走可插拔 `BM25Retriever`(50 条语料) |
-| S2 | `TrajectoryQualityEvaluator` | DataFlow-Agent | 四轴:goal / efficiency / coherence / tool_use + overall |
+| S2 | `TrajectoryQualityEvaluator` | DataFlow-Agent | 四轴:goal / efficiency / coherence / tool_use + overall。**判分用独立模型**(`DF_JUDGE_MODEL`/`DF_JUDGE_API_URL`),与生成器不同源(核查文档 §2) |
 | S3 | `TrajectoryFilter` | DataFlow-Agent | `require_success=True`,`min_steps=2`,`drop_parse_errors=True`,`drop_invalid_tools=True`,`require_nonempty_answer=True` |
 | S4 | `TrajectorySelector` | DataFlow-Agent | `max_selected=50`,`min_depth=2`,`mode="rows"` |
 
@@ -110,9 +115,22 @@ seed(题 → 包装成 agent 任务)
 
 ---
 
-## Review 时应知道的两个局限(诚实标注)
+## 针对核查文档的改进(本轮)
 
-1. **Evidence 的证据是 LLM 脑补的**,不是从真实语料检索来的——所以"够用且绑得上",比真实检索简单。生产应接真实检索(`retrievers.py` 已留 `FlashRAGRetriever` 接口)。
-2. **Interleaved 的 search 检索 50 条小语料**,工具执行(run_python/sympy)是真的,但检索池是 demo 级,不是百万级数学库。
+核查文档 §六把"指标可不可信"收敛为三项检查:**来源是否真实、判分是否独立、淘汰了多少**。本轮针对其中的纯代码项落地:
 
-这两点都是"从 demo 到生产"要补的(见 `PIPELINE_DESIGN_20B.md` 待建清单)。
+| 核查文档 | 改进 | 落地 |
+|---|---|---|
+| §2 生成与判分同源 | interleaved 判分改用**独立模型** | `build_judge_llm()`:读 `DF_JUDGE_MODEL`/`DF_JUDGE_API_URL`/`DF_JUDGE_API_KEY`;未配置则回退并**告警**(不再静默同源) |
+| §3 / §七 只交付通过样本,无通过率与失败池 | 四个 filter 都把淘汰样本落**失败池** + 打印**通过率** | `operators/failure_pool.py`;每行带 `_drop_stage`/`_drop_reason`,失败池即 PRM/负样本资产 |
+| §5 无来源/合成标记字段 | 新增**血缘算子**,pipeline 最前盖字段 | `ProvenanceOperator`:`problem_source`/`synthetic_flag`/`gen_model`/`pipeline`/`created_at`;已有值不覆盖 |
+| §一.1 / L4 缺失 | 新增**难度分层器** | `DifficultyTagOperator`:来源标签初分 L1-L4 + LLM 兜底 + 可选配比抽样;L4=0 时显式告警 |
+
+## Review 时仍需知道的局限(诚实标注)
+
+1. **Evidence 的证据仍是 LLM 脑补的**,不是从真实语料检索来的——生产应接真实检索(`retrievers.py` 已留 `FlashRAGRetriever` 接口)。
+2. **Interleaved 的 search 检索 50 条小语料**,工具执行(run_python/sympy)是真的,但检索池是 demo 级。
+3. **难度分层的来源初分依赖题库自带的来源标签**;demo 自造题无标签,需靠 `DifficultyTagOperator` 的 LLM 兜底,准确度未在真实题库上标定。
+4. **判分独立性靠配置保证**:必须实际设置 `DF_JUDGE_MODEL` 指向不同来源的模型才生效;不设只会回退+告警,不会自动变独立。
+
+这些都是"从 demo 到生产"要补的(见 `PIPELINE_DESIGN_20B.md` 待建清单)。

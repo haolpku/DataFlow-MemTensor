@@ -51,12 +51,15 @@ class DecontaminationFilter(OperatorABC):
                  ngram: int = 10,
                  overlap_threshold: float = 0.5,
                  check_fields: Optional[List[str]] = None,
+                 failure_pool_path: Optional[str] = None,
                  ):
         self.logger = get_logger()
         self.ngram = int(ngram)
         self.overlap_threshold = float(overlap_threshold)
         self.check_fields = check_fields or ["instruction", "question", "problem"]
         self.benchmark_file = benchmark_file
+        # 失败池:命中评测集的污染样本落盘,便于产出污染报告(核查文档 §3;方案 §5.1)。
+        self.failure_pool_path = failure_pool_path
         self._bench_ngrams = set()
         if benchmark_file and os.path.exists(benchmark_file):
             self._load_benchmark(benchmark_file)
@@ -131,6 +134,14 @@ class DecontaminationFilter(OperatorABC):
         n_removed = n_before - len(output)
         rate = (n_removed / n_before * 100) if n_before else 0.0
 
+        # 失败池:污染样本落盘 —— 即污染报告的原始凭证(方案 §5.1 命中率应 0%)
+        from .failure_pool import dump_rejected, log_pass_rate
+        contaminated = dataframe[~mask_clean]
+        dump_rejected(contaminated, self.failure_pool_path,
+                      stage="DecontaminationFilter", logger=self.logger,
+                      reasons=None)
+
+        log_pass_rate(self.logger, "DecontaminationFilter", n_before, len(output))
         self.logger.info(
             f"[DecontaminationFilter] kept {len(output)}/{n_before} rows "
             f"(removed {n_removed} contaminated, hit-rate {rate:.2f}%, "

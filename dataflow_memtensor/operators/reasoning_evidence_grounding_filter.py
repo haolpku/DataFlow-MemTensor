@@ -30,6 +30,7 @@ class ReasoningEvidenceGroundingFilter(OperatorABC):
                  compare_method: str = "math_verify",
                  require_distractors: bool = False,
                  forbid_citing_distractors: bool = True,
+                 failure_pool_path: str = None,
                  ):
         self.logger = get_logger()
         self.min_binding_rate = min_binding_rate
@@ -38,6 +39,9 @@ class ReasoningEvidenceGroundingFilter(OperatorABC):
         self.compare_method = compare_method
         self.require_distractors = require_distractors
         self.forbid_citing_distractors = forbid_citing_distractors
+        # 失败池:grounding 不达标(绑定率低/悬空引用/引用干扰项/答案错)的样本落盘,
+        # 便于统计通过率(核查文档 §3/§七)。None 则不落盘,保持旧行为。
+        self.failure_pool_path = failure_pool_path
 
     @staticmethod
     def get_desc(lang: str = "zh"):
@@ -71,47 +75,48 @@ class ReasoningEvidenceGroundingFilter(OperatorABC):
             # fall back to exact if math_verify unavailable / errors
             return str(answer).strip() == str(reference).strip()
 
-    def _row_ok(self, row) -> bool:
+    def _reason(self, row) -> str:
+        """返回淘汰原因;通过所有检查则返回空串。"""
         steps = row.get(self.steps_key)
         evidences = row.get(self.evidences_key)
         if not isinstance(steps, list) or len(steps) < self.min_hops:
-            return False
+            return f"跳数不足(<{self.min_hops})"
         if not isinstance(evidences, list) or not evidences:
-            return False
+            return "无证据簇"
 
         valid_ids = {e.get("evidence_id") for e in evidences if isinstance(e, dict)}
         bound = 0
         for s in steps:
             if not isinstance(s, dict):
-                return False
+                return "step结构非法"
             eids = s.get("evidence_ids") or []
             if not eids:
                 continue
             # every cited id must exist
             if any(eid not in valid_ids for eid in eids):
-                return False
+                return "悬空引用(evidence_id不存在)"
             bound += 1
         binding_rate = bound / len(steps) if steps else 0.0
         if binding_rate < self.min_binding_rate:
-            return False
+            return f"绑定率低({binding_rate:.2f}<{self.min_binding_rate})"
 
         # 干扰项检查:证明模型确实要"筛选"证据,而非全用
         distractor_ids = row.get("distractor_ids") if "distractor_ids" in row.index else None
         distractor_ids = distractor_ids if isinstance(distractor_ids, list) else []
         if self.require_distractors and not distractor_ids:
-            return False
+            return "无干扰项"
         if self.forbid_citing_distractors and distractor_ids:
             cited = {e for s in steps if isinstance(s, dict) for e in (s.get("evidence_ids") or [])}
             # 被引用的证据里不能包含任何干扰项
             if cited & set(distractor_ids):
-                return False
+                return "引用了干扰项"
 
         if self.check_answer_against and self.check_answer_against in row.index:
             ref = row.get(self.check_answer_against)
             ans = row.get(self.answer_key)
             if ref is not None and str(ref) != "" and not self._answer_ok(ans, ref):
-                return False
-        return True
+                return "答案校验未通过"
+        return ""
 
     def run(self,
             storage: DataFlowStorage,
@@ -125,10 +130,23 @@ class ReasoningEvidenceGroundingFilter(OperatorABC):
 
         dataframe = storage.read("dataframe")
         n_before = len(dataframe)
-        keep_mask = dataframe.apply(self._row_ok, axis=1)
+        reasons = dataframe.apply(self._reason, axis=1)
+        keep_mask = reasons == ""
         output = dataframe[keep_mask].reset_index(drop=True)
 
+        # 失败池:grounding 不达标样本落盘 + 原因分布(核查文档 §3/§七)
+        from .failure_pool import dump_rejected, log_pass_rate
+        dropped = reasons[~keep_mask]
+        if len(dropped):
+            from collections import Counter
+            cats = Counter(r.split("(")[0] for r in dropped)
+            self.logger.info(f"[EvidenceGroundingFilter] 剔除原因分布: {dict(cats)}")
+            dump_rejected(dataframe[~keep_mask], self.failure_pool_path,
+                          stage="ReasoningEvidenceGroundingFilter", logger=self.logger,
+                          reasons=dropped)
+
         output_file = storage.write(output)
+        log_pass_rate(self.logger, "ReasoningEvidenceGroundingFilter", n_before, len(output))
         self.logger.info(
             f"[EvidenceGroundingFilter] kept {len(output)}/{n_before} rows "
             f"(min_binding_rate={self.min_binding_rate}, min_hops={self.min_hops}). "
