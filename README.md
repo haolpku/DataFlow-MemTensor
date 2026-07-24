@@ -154,6 +154,8 @@ python -m dataflow_memtensor.pipelines.evidence_pipeline
 
 # 长程交错思维: 种子任务 → 轨迹生成 → 打分 → 过滤 → 选择
 export MEMTENSOR_CORPUS=data/math_corpus.jsonl   # 挂真实语料走 BM25;不设则用内置 Dict 兜底
+# 判分独立(核查文档 §2):判分模型应与生成模型不同源。不设则回退同源并告警。
+export DF_JUDGE_MODEL=...  DF_JUDGE_API_URL=http://.../v1/chat/completions  DF_JUDGE_API_KEY=sk-...
 python -m dataflow_memtensor.pipelines.interleaved_pipeline
 ```
 
@@ -217,9 +219,12 @@ sandbox = MathSandboxClient(retriever=FlashRAGRetriever(
 - [ ] **题库**:`data/*_seed.jsonl` 换成 §3.2 的真实题库(NuminaMath / OpenMathReasoning / OpenR1 …),`FileStorage` 支持 `hf:` 前缀直读 HF。
 - [ ] **检索语料**:`math_corpus.jsonl` 换成百万级数学语料 + 建 e5/faiss 索引,切 `FlashRAGRetriever`。
 - [ ] **分布式 serving**:`APILLMServing_request` 的 `max_workers` 调大,或换 Ray 批量后端。
+- [x] **污染控制**:`DecontaminationFilter` 10-gram 黑名单扫描(AIME/MATH-500/GSM8K…),命中率目标 0%(§5.1)。
+- [x] **难度分层**:`DifficultyTagOperator`(来源标签初分 + LLM 兜底 + 可选配比抽样)。
+- [x] **来源血缘 + 失败池**:`ProvenanceOperator`(source/synthetic_flag/gen_model)+ 各 filter 落 `failure_pool.jsonl` 并打印通过率。
+- [x] **判分独立**:interleaved 判分用独立模型(`DF_JUDGE_MODEL`),与生成器不同源。
 - [ ] **verifier 栈**:现有 grounding + math_verify + sympy;补 Pass@k 双向过滤、多模型交叉、LLM judge(§6 五层)。
-- [ ] **污染控制**:接入 10-gram 黑名单扫描(AIME/MATH-500/GSM8K…),命中率 0%(§5.1)。
-- [ ] **分片与血缘**:大规模下 `FileStorage` 分片写 + manifest 记录来源/难度/长度(§5 交付要求)。
+- [ ] **分片与血缘**:大规模下 `FileStorage` 分片写 + manifest(单条血缘字段已就绪,缺分片 manifest,§5 交付要求)。
 
 ---
 

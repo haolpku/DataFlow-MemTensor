@@ -25,6 +25,7 @@ from dataflow.core import LLMServingABC
 from dataflow_memtensor.operators import (
     ReasoningEvidenceChainGenerator,
     ReasoningEvidenceGroundingFilter,
+    ProvenanceOperator,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -54,7 +55,7 @@ def build_llm():
 
 class EvidenceReasoningPipeline:
     def __init__(self, seed_file: str = _DEFAULT_SEED, llm_serving: LLMServingABC = None,
-                 cache_path: str = "./cache_evidence"):
+                 cache_path: str = "./cache_evidence", failure_pool_path: str = None):
         self.storage = FileStorage(
             first_entry_file_name=seed_file,
             cache_path=cache_path,
@@ -62,7 +63,12 @@ class EvidenceReasoningPipeline:
             cache_type="jsonl",
         )
         self.llm_serving = llm_serving or build_llm()
+        # 失败池:grounding 不达标样本落盘,供统计通过率(核查文档 §3/§七)
+        self.failure_pool_path = failure_pool_path or os.path.join(cache_path, "failure_pool.jsonl")
 
+        self.provenance = ProvenanceOperator(
+            gen_model=os.environ.get("DF_MODEL", ""), pipeline="evidence", synthetic_flag=True,
+        )
         self.evidence_generator = ReasoningEvidenceChainGenerator(
             llm_serving=self.llm_serving,
         )
@@ -71,9 +77,12 @@ class EvidenceReasoningPipeline:
             min_hops=3,
             check_answer_against="golden_answer",
             compare_method="math_verify",
+            failure_pool_path=self.failure_pool_path,
         )
 
     def forward(self):
+        # S0 血缘标记(核查文档 §5)
+        self.provenance.run(storage=self.storage.step())
         self.evidence_generator.run(
             storage=self.storage.step(),
             input_key="instruction",

@@ -34,12 +34,16 @@ class CoTQualityFilter(OperatorABC):
                  min_distinct_ratio: float = 0.35,
                  max_restate_overlap: float = 0.92,
                  ngram: int = 4,
+                 failure_pool_path: str = None,
                  ):
         self.logger = get_logger()
         self.min_think_chars = int(min_think_chars)
         self.min_distinct_ratio = float(min_distinct_ratio)
         self.max_restate_overlap = float(max_restate_overlap)
         self.ngram = int(ngram)
+        # 失败池:被剔除样本(带原因)落盘,便于统计通过率(核查文档 §3/§七)。
+        # None 则不落盘,保持旧行为。
+        self.failure_pool_path = failure_pool_path
 
     @staticmethod
     def get_desc(lang: str = "zh"):
@@ -101,13 +105,20 @@ class CoTQualityFilter(OperatorABC):
         dataframe = storage.read("dataframe")
         n_before = len(dataframe)
         reasons = dataframe.apply(self._reason, axis=1)
-        output = dataframe[reasons == ""].reset_index(drop=True)
+        keep_mask = reasons == ""
+        output = dataframe[keep_mask].reset_index(drop=True)
 
-        dropped = reasons[reasons != ""]
+        dropped = reasons[~keep_mask]
         if len(dropped):
             from collections import Counter
             cats = Counter(r.split("(")[0] for r in dropped)
             self.logger.info(f"[CoTQualityFilter] 剔除原因分布: {dict(cats)}")
-        self.logger.info(f"[CoTQualityFilter] kept {len(output)}/{n_before} rows.")
+            # 失败池:落盘被剔除样本 + 原因
+            from .failure_pool import dump_rejected
+            dump_rejected(dataframe[~keep_mask], self.failure_pool_path,
+                          stage="CoTQualityFilter", logger=self.logger,
+                          reasons=dropped)
+        from .failure_pool import log_pass_rate
+        log_pass_rate(self.logger, "CoTQualityFilter", n_before, len(output))
         storage.write(output)
         return [self.cot_key]

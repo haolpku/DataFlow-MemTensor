@@ -135,16 +135,20 @@ S7 出库        → 20B token 主训练集
 
 ## 6. 与 demo 的差距 = 待建清单
 
-demo(`cot_pipeline`)只覆盖了 **S5 生成 + S6 答案校验** 两步。放量到 20B 需补:
+demo(`cot_pipeline`)现覆盖 **S0 血缘 + S3 难度打标 + S4 去污染 + S5 生成 + S6 答案校验**,并把淘汰样本落失败池。放量到 20B 仍需补:
 
-- [ ] **S4 去污染**(最高优先级,红线)
+- [x] **S4 去污染**(`DecontaminationFilter`,红线,已接入)
+- [x] **S3 难度打标**(`DifficultyTagOperator`:来源初分 + LLM 兜底;**按配比抽样已实现**,放量时开 `target_ratio`)
+- [x] **S0 血缘标记**(`ProvenanceOperator`:source/synthetic_flag/gen_model/created_at)
+- [x] **失败池 + 通过率**(`failure_pool.py`:S6 及各 filter 淘汰样本落盘,即 Failure Pool)
+- [x] **判分独立**(interleaved 判分改用独立模型,核查文档 §2)
 - [ ] S1 采集器(接 HF 大题库)
 - [ ] S2 去重(MinHash LSH)
-- [ ] S3 难度分层(复用上游算子,配采样)
 - [ ] S5 多解采样开关 + 自带CoT 归一算子
 - [ ] S6 Pass@k 过滤
 - [ ] S7 打包 + Data Card + manifest
 - [ ] 分布式 serving + 分片存储 + 监控
+- [ ] **数据侧(非代码)**:接真实题源与检索语料重跑,以真实检索命中率/成功率/绑定率建 baseline(核查文档 §一.1 / §七)
 
 ---
 
