@@ -21,10 +21,14 @@ class ReasoningCoTAnswerFilter(OperatorABC):
     def __init__(self,
                  compare_method: Literal["math_verify", "exact"] = "math_verify",
                  require_think_tag: bool = True,
+                 failure_pool_path: str = None,
                  ):
         self.logger = get_logger()
         self.compare_method = compare_method
         self.require_think_tag = require_think_tag
+        # 失败池:答案错/无 think 标签的样本落盘,便于统计通过率并作负样本资产
+        # (核查文档 §3/§七;PIPELINE_DESIGN_20B 的 Failure Pool)。None 则不落盘。
+        self.failure_pool_path = failure_pool_path
 
     @staticmethod
     def get_desc(lang: str = "zh"):
@@ -65,15 +69,26 @@ class ReasoningCoTAnswerFilter(OperatorABC):
         dataframe = storage.read("dataframe")
         n_before = len(dataframe)
 
-        def _row_ok(row) -> bool:
+        def _reason(row) -> str:
+            """返回淘汰原因;通过则空串。"""
             if self.require_think_tag and "<think>" not in str(row.get(self.cot_key, "")):
-                return False
-            return self._answer_ok(row.get(self.answer_key), row.get(self.gt_key))
+                return "缺少<think>标签"
+            if not self._answer_ok(row.get(self.answer_key), row.get(self.gt_key)):
+                return "答案校验未通过"
+            return ""
 
-        keep = dataframe.apply(_row_ok, axis=1)
+        reasons = dataframe.apply(_reason, axis=1)
+        keep = reasons == ""
         output = dataframe[keep].reset_index(drop=True)
 
+        # 失败池:错答案/坏格式落盘,是 PRM / 自检训练的负样本资产
+        from .failure_pool import dump_rejected, log_pass_rate
+        dump_rejected(dataframe[~keep], self.failure_pool_path,
+                      stage="ReasoningCoTAnswerFilter", logger=self.logger,
+                      reasons=reasons[~keep])
+
         output_file = storage.write(output)
+        log_pass_rate(self.logger, "ReasoningCoTAnswerFilter", n_before, len(output))
         self.logger.info(
             f"[CoTAnswerFilter] kept {len(output)}/{n_before} rows "
             f"(compare={self.compare_method}). Saved to {output_file}")

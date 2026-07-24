@@ -7,6 +7,8 @@ from .reasoning_cot_answer_filter import ReasoningCoTAnswerFilter
 from .cot_quality_filter import CoTQualityFilter
 from .decontamination_filter import DecontaminationFilter
 from .answer_normalize_operator import AnswerNormalizeOperator
+from .provenance_operator import ProvenanceOperator
+from .difficulty_tag_operator import DifficultyTagOperator
 
 __all__ = [
     "ReasoningEvidenceChainGenerator",
@@ -16,4 +18,6 @@ __all__ = [
     "CoTQualityFilter",
     "DecontaminationFilter",
     "AnswerNormalizeOperator",
+    "ProvenanceOperator",
+    "DifficultyTagOperator",
 ]

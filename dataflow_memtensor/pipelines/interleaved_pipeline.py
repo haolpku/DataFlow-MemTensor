@@ -67,6 +67,56 @@ def build_llm():
     )
 
 
+def build_judge_llm(generator_llm=None):
+    """构建**独立于生成器**的判分 LLM(核查文档 §2)。
+
+    核查文档指出:demo 里生成器与质量判分器传入同一个 llm 实例,导致判分毫无区分度
+    (22/22 全 5 分,连它自己指出有无效步骤的轨迹也给满分)。判分模型必须与生成模型
+    **不同来源**,否则等于自己给自己打分。
+
+    通过独立的环境变量配置判分端点;三者任一未设时,回退到对应的生成器配置:
+        DF_JUDGE_MODEL    判分模型名(如换一个厂商/更强的模型)
+        DF_JUDGE_API_URL  判分端点
+        DF_JUDGE_API_KEY  判分端点鉴权
+
+    若判分模型名与生成模型相同,会明确告警——因为那就退回了核查文档批评的同源判分。
+    """
+    try:
+        from dataflow.serving import APILLMServing_request
+    except ModuleNotFoundError:
+        from dataflow.serving.api_llm_serving_request import APILLMServing_request
+
+    judge_model = os.environ.get("DF_JUDGE_MODEL")
+    judge_url = os.environ.get("DF_JUDGE_API_URL")
+    judge_key = os.environ.get("DF_JUDGE_API_KEY")
+
+    if not judge_model and not judge_url:
+        # 未配置独立判分端点:回退到生成器,但明确告警(不是静默同源)
+        print("[warn] 未设置 DF_JUDGE_MODEL / DF_JUDGE_API_URL —— 判分回退到生成器同一模型。"
+              "\n       核查文档 §2:判分应与生成不同源。放量前请配置独立判分端点:"
+              "\n       export DF_JUDGE_MODEL=...  DF_JUDGE_API_URL=...  DF_JUDGE_API_KEY=...")
+        return generator_llm if generator_llm is not None else build_llm()
+
+    gen_model = os.environ.get("DF_MODEL", "gpt-4o")
+    resolved_model = judge_model or gen_model
+    if resolved_model == gen_model:
+        print(f"[warn] 判分模型与生成模型相同({resolved_model}),判分缺乏独立性(核查文档 §2)。")
+    # 判分鉴权:APILLMServing_request 从环境变量读 key(名字由 key_name_of_api_key 指定)。
+    # 设了 DF_JUDGE_API_KEY 就用它(允许判分端点用不同的 key),否则回退 DF_API_KEY。
+    key_name = "DF_API_KEY"
+    if judge_key:
+        os.environ["DF_JUDGE_API_KEY"] = judge_key
+        key_name = "DF_JUDGE_API_KEY"
+    print(f"[info] 独立判分模型: {resolved_model} @ {judge_url or os.environ.get('DF_API_URL')}")
+    return APILLMServing_request(
+        api_url=judge_url or os.environ.get("DF_API_URL",
+                                            "https://api.openai.com/v1/chat/completions"),
+        key_name_of_api_key=key_name,
+        model_name=resolved_model,
+        max_workers=int(os.environ.get("DF_MAX_WORKERS", "16")),
+    )
+
+
 def build_sandbox():
     """按 MEMTENSOR_CORPUS 选择检索后端:有语料走真实 BM25,否则用内置 Dict 兜底。"""
     corpus = os.environ.get("MEMTENSOR_CORPUS")
@@ -122,6 +172,7 @@ def main(seed_tasks=None, out_path=None, cache_path="./cache_interleaved"):
     )
 
     llm = build_llm()
+    judge_llm = build_judge_llm(generator_llm=llm)  # 判分独立于生成(核查文档 §2)
     sandbox = build_sandbox()
 
     # Stage 1: 生成交错轨迹(真实工具调用)  -> interleaved_step_step1.jsonl
@@ -130,9 +181,9 @@ def main(seed_tasks=None, out_path=None, cache_path="./cache_interleaved"):
         max_steps=8, max_workers=4,
     ).run(storage.step(), input_key="query", output_key="trajectory")
 
-    # Stage 2: LLM-as-judge 四轴打分            -> interleaved_step_step2.jsonl
+    # Stage 2: LLM-as-judge 四轴打分(用独立判分模型)-> interleaved_step_step2.jsonl
     TrajectoryQualityEvaluator(
-        llm_serving=llm, max_workers=4,
+        llm_serving=judge_llm, max_workers=4,
     ).run(storage.step(), input_key="trajectory", output_key="traj_overall")
 
     # Stage 3: 规则门控                          -> interleaved_step_step3.jsonl

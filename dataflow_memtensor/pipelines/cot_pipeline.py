@@ -31,6 +31,8 @@ from dataflow_memtensor.operators import (
     ReasoningCoTAnswerFilter,
     CoTQualityFilter,
     DecontaminationFilter,
+    ProvenanceOperator,
+    DifficultyTagOperator,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -59,7 +61,8 @@ def build_llm():
 
 class LongCoTPipeline:
     def __init__(self, seed_file: str = _DEFAULT_SEED, llm_serving: LLMServingABC = None,
-                 cache_path: str = "./cache_cot", decontam_benchmark_file: str = None):
+                 cache_path: str = "./cache_cot", decontam_benchmark_file: str = None,
+                 failure_pool_path: str = None, tag_difficulty: bool = True):
         self.storage = FileStorage(
             first_entry_file_name=seed_file,
             cache_path=cache_path,
@@ -67,24 +70,46 @@ class LongCoTPipeline:
             cache_type="jsonl",
         )
         self.llm_serving = llm_serving or build_llm()
+        # 失败池:各 filter 把被淘汰样本(带原因)追加到此文件,供统计通过率/失败池
+        # (核查文档 §3/§七)。默认落在 cache 目录下。
+        self.failure_pool_path = failure_pool_path or os.path.join(cache_path, "failure_pool.jsonl")
+        self.tag_difficulty = tag_difficulty
+
+        # S0 血缘标记(核查文档 §5 最小字段):problem_source / synthetic_flag / gen_model ...
+        self.provenance = ProvenanceOperator(
+            gen_model=os.environ.get("DF_MODEL", ""),
+            pipeline="cot",
+            synthetic_flag=True,  # CoT 由 LLM 生成
+        )
+        # S0.5 难度分层(核查文档 L4 缺失):来源标签初分,可选 LLM 兜底。
+        # 这里只打标不抽样(不传 target_ratio),避免 demo 小样本被抽空。
+        self.difficulty_tagger = DifficultyTagOperator(llm_serving=self.llm_serving)
 
         self.cot_generator = ReasoningLongCoTGenerator(llm_serving=self.llm_serving)
         self.quality_filter = CoTQualityFilter(
             min_think_chars=120,
             min_distinct_ratio=0.35,
             max_restate_overlap=0.92,
+            failure_pool_path=self.failure_pool_path,
         )
         self.answer_filter = ReasoningCoTAnswerFilter(
             compare_method="math_verify",
             require_think_tag=True,
+            failure_pool_path=self.failure_pool_path,
         )
         # 去污染:默认无黑名单时不剔除并告警;放量前传 benchmark_file。
         self.decontam = DecontaminationFilter(
             benchmark_file=decontam_benchmark_file,
             ngram=10, overlap_threshold=0.5,
+            failure_pool_path=self.failure_pool_path,
         )
 
     def forward(self):
+        # S0 血缘标记(每条盖 source/synthetic_flag/gen_model/created_at,后续步骤都带着它)
+        self.provenance.run(storage=self.storage.step())
+        # S0.5 难度分层(按来源标签打 L1-L4;LLM 兜底未命中的)
+        if self.tag_difficulty:
+            self.difficulty_tagger.run(storage=self.storage.step(), input_key="instruction")
         # S1 生成 CoT
         self.cot_generator.run(
             storage=self.storage.step(),
